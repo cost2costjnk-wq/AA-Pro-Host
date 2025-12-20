@@ -4,7 +4,7 @@ import { db } from '../services/db';
 import { Party, Product, Transaction, TransactionItem, Account, CashNoteCount, Denomination, CashDrawer } from '../types';
 import { formatCurrency } from '../services/formatService';
 import NepaliDatePicker from './NepaliDatePicker';
-import { Plus, Trash2, Save, X, Zap, ChevronDown, Search, AlertCircle, Check, Tag, TrendingUp, DollarSign, Banknote, RotateCcw, Sparkles, ShoppingCart, Percent } from 'lucide-react';
+import { Plus, Trash2, Save, X, Zap, ChevronDown, Search, AlertCircle, Check, Tag, TrendingUp, DollarSign, Banknote, RotateCcw, Sparkles, ShoppingCart, Percent, ArrowRight } from 'lucide-react';
 import { useToast } from './Toast';
 
 const DENOMINATIONS: Denomination[] = [1000, 500, 100, 50, 20, 10, 5, 2, 1];
@@ -100,6 +100,23 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
     document.addEventListener("mousedown", handleClickOutside);
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
+
+  // Form Shortcut Keys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        handleFinalSave();
+      }
+      if (e.key === 'Escape') {
+        if (!showCashModal && !showAddPartyModal && !showPriceUpdateModal) {
+          onClose();
+        }
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [items, selectedPartyId, invoiceNo, invoiceDate, paymentMode, showCashModal, showAddPartyModal, showPriceUpdateModal]);
 
   const getNextInvoiceNo = () => {
       const transactions = db.getTransactions().filter(t => t.type === type);
@@ -269,7 +286,7 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
       setFocusedRowIndex(rowIndex);
   };
 
-  const handleKeyDown = (e: React.KeyboardEvent, index: number, field: string) => {
+  const handleKeyDownInGrid = (e: React.KeyboardEvent, index: number, field: string) => {
       if (field === 'productName' && showProductDropdown) {
           const filtered = getFilteredProducts();
           if (e.key === 'ArrowDown') { e.preventDefault(); setHighlightedProductIndex(prev => (prev + 1) % filtered.length); return; }
@@ -293,6 +310,22 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
       }
   };
 
+  const handleApplyPriceUpdates = () => {
+      itemsToUpdatePrices.forEach(update => {
+          const product = db.getProducts().find(p => p.id === update.productId);
+          if (product) {
+              db.updateProduct({
+                  ...product,
+                  purchasePrice: update.newPurchasePrice,
+                  salePrice: update.newSalePrice,
+                  wholesalePrice: update.newWholesalePrice
+              });
+          }
+      });
+      addToast('Product prices updated successfully', 'success');
+      handleFinalSave(true);
+  };
+
   const handleFinalSave = (skipPriceCheck = false) => {
       const validItems = items.filter(i => i.productName.trim() !== '');
       if (!selectedPartyId) { addToast('Please select a party', 'error'); return; }
@@ -306,10 +339,23 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
               if (product) {
                   let purchaseRate = Number(item.rate);
                   if (item.unit && product.secondaryUnit && item.unit === product.secondaryUnit && product.conversionRatio) purchaseRate *= product.conversionRatio;
-                  if (purchaseRate > product.purchasePrice) updateList.push({ productId: product.id, productName: product.name, oldPurchasePrice: product.purchasePrice, newPurchasePrice: purchaseRate, newSalePrice: product.salePrice, newWholesalePrice: product.wholesalePrice || product.salePrice });
+                  if (purchaseRate > product.purchasePrice) {
+                      updateList.push({ 
+                          productId: product.id, 
+                          productName: product.name, 
+                          oldPurchasePrice: product.purchasePrice, 
+                          newPurchasePrice: purchaseRate, 
+                          newSalePrice: product.salePrice, 
+                          newWholesalePrice: product.wholesalePrice || product.salePrice 
+                      });
+                  }
               }
           });
-          if (updateList.length > 0) { setItemsToUpdatePrices(updateList); setShowPriceUpdateModal(true); return; }
+          if (updateList.length > 0) { 
+              setItemsToUpdatePrices(updateList); 
+              setShowPriceUpdateModal(true); 
+              return; 
+          }
       }
 
       const party = parties.find(p => p.id === selectedPartyId);
@@ -344,7 +390,9 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
               setReceivedNotes(DENOMINATIONS.map(d => ({ denomination: d, count: 0 })));
               setReturnedNotes(DENOMINATIONS.map(d => ({ denomination: d, count: 0 })));
               setTimeout(() => partyInputRef.current?.focus(), 100);
-          } else { onSave(); }
+          } else { 
+              onSave(); 
+          }
       }
   };
 
@@ -499,7 +547,7 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
                            <div className="flex items-center justify-center h-9 text-gray-400 font-medium text-sm">{index + 1}</div>
                            <div className="relative">
                               <Search className="absolute left-2.5 top-2.5 w-4 h-4 text-gray-400" />
-                              <input ref={(el) => { if (el) inputsRef.current.set(`${index}-productName`, el); }} type="text" className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md text-sm outline-none" placeholder="Search Item..." value={item.productName} onChange={e => handleFieldChange(index, 'productName', e.target.value)} onKeyDown={e => handleKeyDown(e, index, 'productName')} onFocus={() => { setFocusedRowIndex(index); setShowProductDropdown(true); setProductSearchTerm(item.productName); }} />
+                              <input ref={(el) => { if (el) inputsRef.current.set(`${index}-productName`, el); }} type="text" className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-md text-sm outline-none" placeholder="Search Item..." value={item.productName} onChange={e => handleFieldChange(index, 'productName', e.target.value)} onKeyDown={e => handleKeyDownInGrid(e, index, 'productName')} onFocus={() => { setFocusedRowIndex(index); setShowProductDropdown(true); setProductSearchTerm(item.productName); }} />
                               {showProductDropdown && focusedRowIndex === index && (
                                  <div ref={dropdownRef} className="absolute top-full left-0 w-[400px] bg-white border border-gray-200 rounded-lg shadow-xl z-50 mt-1 max-h-60 overflow-y-auto">
                                     {getFilteredProducts().map((p, idx) => (
@@ -511,10 +559,10 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
                                  </div>
                               )}
                            </div>
-                           <div><input ref={(el) => { if (el) inputsRef.current.set(`${index}-quantity`, el); }} type="number" min="0" className="w-full p-2 border border-gray-300 rounded-md text-sm text-center" placeholder="Qty" value={item.quantity} onChange={e => handleFieldChange(index, 'quantity', e.target.value)} onKeyDown={e => handleKeyDown(e, index, 'quantity')} onFocus={(e) => {setFocusedRowIndex(index); e.target.select();}} /></div>
+                           <div><input ref={(el) => { if (el) inputsRef.current.set(`${index}-quantity`, el); }} type="number" min="0" className="w-full p-2 border border-gray-300 rounded-md text-sm text-center" placeholder="Qty" value={item.quantity} onChange={e => handleFieldChange(index, 'quantity', e.target.value)} onKeyDown={e => handleKeyDownInGrid(e, index, 'quantity')} onFocus={(e) => {setFocusedRowIndex(index); e.target.select();}} /></div>
                            <div><div className="h-9 flex items-center justify-center text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-md">{item.unit || '-'}</div></div>
-                           <div><input ref={(el) => { if (el) inputsRef.current.set(`${index}-rate`, el); }} type="number" className="w-full p-2 border border-gray-300 rounded-md text-sm text-right" placeholder="Rate" value={item.rate} onChange={e => handleFieldChange(index, 'rate', e.target.value)} onKeyDown={e => handleKeyDown(e, index, 'rate')} onFocus={(e) => {setFocusedRowIndex(index); e.target.select();}} /></div>
-                           <div><input ref={(el) => { if (el) inputsRef.current.set(`${index}-discountAmount`, el); }} type="number" className="w-full p-2 border border-gray-300 rounded-md text-sm text-right" placeholder="Dis." value={item.discountAmount} onChange={e => handleFieldChange(index, 'discountAmount', e.target.value)} onKeyDown={e => handleKeyDown(e, index, 'discountAmount')} onFocus={(e) => {setFocusedRowIndex(index); e.target.select();}} /></div>
+                           <div><input ref={(el) => { if (el) inputsRef.current.set(`${index}-rate`, el); }} type="number" className="w-full p-2 border border-gray-300 rounded-md text-sm text-right" placeholder="Rate" value={item.rate} onChange={e => handleFieldChange(index, 'rate', e.target.value)} onKeyDown={e => handleKeyDownInGrid(e, index, 'rate')} onFocus={(e) => {setFocusedRowIndex(index); e.target.select();}} /></div>
+                           <div><input ref={(el) => { if (el) inputsRef.current.set(`${index}-discountAmount`, el); }} type="number" className="w-full p-2 border border-gray-300 rounded-md text-sm text-right" placeholder="Dis." value={item.discountAmount} onChange={e => handleFieldChange(index, 'discountAmount', e.target.value)} onKeyDown={e => handleKeyDownInGrid(e, index, 'discountAmount')} onFocus={(e) => {setFocusedRowIndex(index); e.target.select();}} /></div>
                            <div className="h-9 flex items-center justify-end px-2 font-bold text-gray-800 text-sm">{formatCurrency(item.amount)}</div>
                            <div className="flex items-center justify-center h-9">{items.length > 1 && <button onClick={() => removeItem(index)} className="p-1.5 text-gray-400 hover:text-red-500 rounded-lg"><Trash2 className="w-4 h-4" /></button>}</div>
                         </div>
@@ -531,6 +579,93 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
             </div>
          </div>
       </div>
+
+      {/* Price Update Reconciliation Modal */}
+      {showPriceUpdateModal && (
+          <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-[80] p-4 backdrop-blur-sm animate-in fade-in duration-200">
+              <div className="bg-white rounded-3xl w-full max-w-2xl shadow-2xl overflow-hidden flex flex-col max-h-[85vh]">
+                  <div className="bg-orange-600 p-6 text-white flex justify-between items-center">
+                      <div>
+                          <h3 className="text-xl font-black flex items-center gap-2 uppercase tracking-tight"><TrendingUp className="w-6 h-6" /> Cost Reconciliation</h3>
+                          <p className="text-orange-100 text-sm mt-1">Some items in this bill have a higher cost than recorded.</p>
+                      </div>
+                      <button onClick={() => setShowPriceUpdateModal(false)} className="text-white hover:opacity-70"><X className="w-6 h-6" /></button>
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-6 space-y-4">
+                      <div className="bg-orange-50 border border-orange-100 p-4 rounded-2xl flex gap-3 text-sm text-orange-800">
+                          <AlertCircle className="w-5 h-5 shrink-0" />
+                          <p>We detected cost increases. Would you like to update your <b>Master Price List</b> with these new rates before saving this bill?</p>
+                      </div>
+
+                      <div className="space-y-2">
+                        {itemsToUpdatePrices.map((item, idx) => (
+                            <div key={item.productId} className="bg-gray-50 border border-gray-200 rounded-2xl p-4 flex flex-col gap-3">
+                                <div className="flex justify-between items-center">
+                                    <span className="font-black text-gray-800">{item.productName}</span>
+                                    <span className="text-[10px] bg-gray-200 px-2 py-0.5 rounded-full font-bold uppercase">Price Spike Detected</span>
+                                </div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="bg-white p-3 rounded-xl border border-gray-100 shadow-sm">
+                                        <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest mb-1">Old Cost</p>
+                                        <p className="font-bold text-gray-600">{formatCurrency(item.oldPurchasePrice)}</p>
+                                    </div>
+                                    <div className="bg-orange-100/50 p-3 rounded-xl border border-orange-200 shadow-sm">
+                                        <p className="text-[10px] font-black text-orange-500 uppercase tracking-widest mb-1">New Cost</p>
+                                        <p className="font-black text-orange-700 flex items-center gap-2">
+                                            {formatCurrency(item.newPurchasePrice)}
+                                            <TrendingUp className="w-4 h-4" />
+                                        </p>
+                                    </div>
+                                </div>
+                                <div className="flex gap-4 pt-1">
+                                    <div className="flex-1">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">New Sales Price</label>
+                                        <input 
+                                            type="number" 
+                                            className="w-full p-2 border border-gray-300 rounded-lg text-sm font-bold" 
+                                            value={item.newSalePrice}
+                                            onChange={e => {
+                                                const val = Number(e.target.value);
+                                                setItemsToUpdatePrices(prev => prev.map((up, i) => i === idx ? { ...up, newSalePrice: val } : up));
+                                            }}
+                                        />
+                                    </div>
+                                    <div className="flex-1">
+                                        <label className="text-[10px] font-bold text-gray-400 uppercase mb-1 block">New Wholesale</label>
+                                        <input 
+                                            type="number" 
+                                            className="w-full p-2 border border-gray-300 rounded-lg text-sm font-bold" 
+                                            value={item.newWholesalePrice}
+                                            onChange={e => {
+                                                const val = Number(e.target.value);
+                                                setItemsToUpdatePrices(prev => prev.map((up, i) => i === idx ? { ...up, newWholesalePrice: val } : up));
+                                            }}
+                                        />
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                      </div>
+                  </div>
+
+                  <div className="p-6 border-t bg-gray-50 flex gap-3">
+                      <button 
+                        onClick={() => handleFinalSave(true)}
+                        className="flex-1 py-3 bg-white border-2 border-gray-300 text-gray-600 rounded-2xl font-bold hover:bg-gray-100 transition-all text-sm"
+                      >
+                          Save Without Updating Master
+                      </button>
+                      <button 
+                        onClick={handleApplyPriceUpdates}
+                        className="flex-1 py-3 bg-orange-600 text-white rounded-2xl font-bold shadow-lg shadow-orange-500/20 hover:bg-orange-700 transition-all active:scale-95 flex items-center justify-center gap-2 text-sm"
+                      >
+                          Update Master & Save Bill <ArrowRight className="w-4 h-4" />
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
 
       {/* Cash Breakdown Modal */}
       {showCashModal && (

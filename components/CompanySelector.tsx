@@ -1,10 +1,9 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Company } from '../types';
-import { Building2, Plus, ArrowRight, Loader2, RefreshCw, FolderOpen, Cloud, Database, X, ChevronRight, AlertCircle, FileJson, CheckCircle } from 'lucide-react';
+import { Building2, Plus, Loader2, RefreshCw, FolderOpen, Database, X, ChevronRight, AlertCircle, FileJson } from 'lucide-react';
 import { getDirectoryHandle, verifyPermission } from '../services/backupStorage';
-import { cloudService } from '../services/cloudService';
 import { useToast } from './Toast';
 
 interface CompanySelectorProps {
@@ -21,7 +20,6 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ onSelect }) => {
 
   // Restore States
   const [showRestoreModal, setShowRestoreModal] = useState(false);
-  const [restoreSource, setRestoreSource] = useState<'path' | 'cloud'>('path');
   const [foundBackups, setFoundBackups] = useState<any[]>([]);
   const [isScanning, setIsScanning] = useState(false);
   const [scanningError, setScanningError] = useState('');
@@ -69,14 +67,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ onSelect }) => {
   };
 
   const scanBackupFolder = async () => {
-      setRestoreSource('path');
       setIsScanning(true);
       setScanningError('');
       setFoundBackups([]);
       try {
           const handle = await getDirectoryHandle();
           if (!handle) {
-              setScanningError('No backup folder specified. Please set one in Settings > Auto Backups.');
+              setScanningError('No local backup folder specified. Please set one in Settings.');
               setIsScanning(false);
               return;
           }
@@ -104,57 +101,18 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ onSelect }) => {
           }
           setFoundBackups(backups.sort((a, b) => b.date.getTime() - a.date.getTime()));
       } catch (err) {
-          setScanningError('Failed to scan directory. The path might be inaccessible.');
-      } finally {
-          setIsScanning(false);
-      }
-  };
-
-  const scanCloudBackups = async () => {
-      setRestoreSource('cloud');
-      setIsScanning(true);
-      setScanningError('');
-      setFoundBackups([]);
-      
-      const config = db.getCloudConfig();
-      if (!config.googleClientId) {
-          setScanningError('Google Client ID is not configured. Please login and set it in Settings.');
-          setIsScanning(false);
-          return;
-      }
-
-      try {
-          const files = await cloudService.listBackups();
-          setFoundBackups(files.map(f => ({
-              id: f.id,
-              name: f.name,
-              date: new Date(f.modifiedTime)
-          })));
-      } catch (err: any) {
-          if (err.message.includes('Google Drive not configured')) {
-              cloudService.requestToken();
-              setScanningError('Initializing Google Authentication. Please try again after logging in.');
-          } else {
-              setScanningError(err.message || 'Failed to fetch from Google Drive');
-          }
+          setScanningError('Failed to scan directory.');
       } finally {
           setIsScanning(false);
       }
   };
 
   const handleRestore = async (backup: any) => {
-      const sourceLabel = restoreSource === 'path' ? 'local folder' : 'Google Drive';
-      if (!window.confirm(`Restore "${backup.name}" from ${sourceLabel}? Current local data will be replaced.`)) return;
+      if (!window.confirm(`Restore "${backup.name}" from local folder? Current data will be replaced.`)) return;
       
       try {
-          let json;
-          if (restoreSource === 'path') {
-              const file = await backup.handle.getFile();
-              json = JSON.parse(await file.text());
-          } else {
-              addToast('Downloading from cloud...', 'info');
-              json = await cloudService.downloadFile(backup.id);
-          }
+          const file = await backup.handle.getFile();
+          const json = JSON.parse(await file.text());
           
           const result = await db.restoreData(json);
           if (result.success) {
@@ -236,14 +194,9 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ onSelect }) => {
                     <Plus className="w-5 h-5" /> Create New Business
                  </button>
                  
-                 <div className="flex gap-2">
-                    <button onClick={() => { setShowRestoreModal(true); scanBackupFolder(); }} className="flex-1 py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl font-bold text-[10px] uppercase tracking-wider hover:bg-blue-100 transition-all flex items-center justify-center gap-2 border border-blue-100">
-                        <FolderOpen className="w-3.5 h-3.5" /> Restore Path
-                    </button>
-                    <button onClick={() => { setShowRestoreModal(true); scanCloudBackups(); }} className="flex-1 py-3 bg-orange-50 dark:bg-orange-900/20 text-orange-600 dark:text-orange-400 rounded-xl font-bold text-[10px] uppercase tracking-wider hover:bg-orange-100 transition-all flex items-center justify-center gap-2 border border-orange-100">
-                        <Cloud className="w-3.5 h-3.5" /> Cloud Sync
-                    </button>
-                 </div>
+                 <button onClick={() => { setShowRestoreModal(true); scanBackupFolder(); }} className="w-full py-3 bg-blue-50 dark:bg-blue-900/20 text-blue-600 dark:text-blue-400 rounded-xl font-bold text-[10px] uppercase tracking-wider hover:bg-blue-100 transition-all flex items-center justify-center gap-2 border border-blue-100">
+                    <FolderOpen className="w-3.5 h-3.5" /> Restore from local path
+                 </button>
                </div>
              </div>
            )}
@@ -253,13 +206,12 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ onSelect }) => {
       {showRestoreModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm animate-in fade-in duration-200">
              <div className="bg-white dark:bg-gray-800 rounded-3xl w-full max-w-lg shadow-2xl flex flex-col max-h-[85vh] overflow-hidden">
-                <div className={`p-6 text-white flex justify-between items-center ${restoreSource === 'path' ? 'bg-blue-600' : 'bg-orange-600'}`}>
+                <div className="p-6 text-white flex justify-between items-center bg-blue-600">
                     <div>
                         <h3 className="text-xl font-black flex items-center gap-2 uppercase tracking-tight">
-                            {restoreSource === 'path' ? <RefreshCw className="w-6 h-6" /> : <Cloud className="w-6 h-6" />}
-                            {restoreSource === 'path' ? 'Path Recovery' : 'Cloud Recovery'}
+                            <RefreshCw className="w-6 h-6" /> Path Recovery
                         </h3>
-                        <p className="text-white/80 text-xs font-medium mt-1">Listing AAPro system backups from your {restoreSource === 'path' ? 'local path' : 'Google Drive'}.</p>
+                        <p className="text-white/80 text-xs font-medium mt-1">Listing AAPro system backups from your local path.</p>
                     </div>
                     <button onClick={() => setShowRestoreModal(false)} className="p-2 hover:bg-white/20 rounded-full"><X className="w-6 h-6" /></button>
                 </div>
@@ -274,11 +226,14 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ onSelect }) => {
                         <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 p-6 rounded-2xl text-center">
                             <AlertCircle className="w-10 h-10 text-red-500 mx-auto mb-4" />
                             <p className="text-red-700 dark:text-red-400 font-bold mb-4">{scanningError}</p>
-                            <button onClick={() => setShowRestoreModal(false)} className="px-6 py-2 bg-red-600 text-white rounded-xl font-bold text-sm">Close</button>
+                            <div className="flex gap-2 justify-center">
+                                <button onClick={() => setShowRestoreModal(false)} className="px-6 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl font-bold text-sm">Cancel</button>
+                                <button onClick={scanBackupFolder} className="px-6 py-2 bg-red-600 text-white rounded-xl font-bold text-sm">Retry</button>
+                            </div>
                         </div>
                     ) : foundBackups.length > 0 ? (
                         <div className="space-y-3">
-                            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Backups Discovered</h4>
+                            <h4 className="text-[10px] font-black text-gray-400 uppercase tracking-widest px-1">Local Points Discovered</h4>
                             {foundBackups.map((backup) => (
                                 <button key={backup.id} onClick={() => handleRestore(backup)} className="w-full flex items-center justify-between p-4 bg-gray-50 dark:bg-gray-700/50 hover:bg-brand-50 border border-gray-100 dark:border-gray-600 rounded-2xl group transition-all">
                                     <div className="flex items-center gap-4">
@@ -295,13 +250,13 @@ const CompanySelector: React.FC<CompanySelectorProps> = ({ onSelect }) => {
                     ) : (
                         <div className="py-20 text-center text-gray-400">
                             <FolderOpen className="w-12 h-12 mx-auto mb-4 opacity-20" />
-                            <p className="font-bold">No valid backups found</p>
+                            <p className="font-bold">No valid local backups found</p>
                         </div>
                     )}
                 </div>
 
                 <div className="p-6 bg-gray-50 dark:bg-gray-900/50 border-t border-gray-100 flex justify-end">
-                    <button onClick={restoreSource === 'path' ? scanBackupFolder : scanCloudBackups} className="px-6 py-2.5 bg-white dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl font-bold text-sm shadow-sm border border-gray-200 flex items-center gap-2 hover:bg-gray-50">
+                    <button onClick={scanBackupFolder} className="px-6 py-2.5 bg-white dark:bg-gray-700 text-gray-700 dark:text-white rounded-xl font-bold text-sm shadow-sm border border-gray-200 flex items-center gap-2 hover:bg-gray-50">
                         <RefreshCw className={`w-4 h-4 ${isScanning ? 'animate-spin' : ''}`} /> Refresh List
                     </button>
                 </div>

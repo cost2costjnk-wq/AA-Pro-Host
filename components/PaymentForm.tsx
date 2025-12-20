@@ -61,10 +61,26 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ type, initialData, onClose, o
     }
   }, [initialData]);
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!selectedPartyId || !amount) return;
+  // Form Shortcut Keys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        triggerSave();
+      }
+      if (e.key === 'Escape') {
+        if (!showCashModal) onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [amount, selectedPartyId, voucherNo, date, notes, selectedAccountId, showCashModal]);
 
+  const triggerSave = () => {
+    if (!selectedPartyId || !amount) {
+      addToast('Please fill required fields (Party and Amount)', 'error');
+      return;
+    }
     const party = parties.find(p => p.id === selectedPartyId);
     const account = accounts.find(a => a.id === selectedAccountId);
     const isCash = account?.type === 'Cash';
@@ -86,6 +102,11 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ type, initialData, onClose, o
     if (initialData) db.updateTransaction(initialData.id, transactionData);
     else db.addTransaction(transactionData);
     onSave();
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    triggerSave();
   };
 
   const filteredParties = parties.filter(p => p.name.toLowerCase().includes(partySearchTerm.toLowerCase()));

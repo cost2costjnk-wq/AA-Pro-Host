@@ -1,10 +1,8 @@
 
 import React, { useState, useRef } from 'react';
-import { Upload, Download, CheckCircle, AlertCircle, FileSpreadsheet, ArrowRight, Database, RefreshCcw, Building2, Package, Users, Receipt, Landmark, Bell, Wrench, Banknote } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, FileSpreadsheet, ArrowRight, Database, RefreshCcw } from 'lucide-react';
 import { db } from '../services/db';
 import { Party, Product, Transaction } from '../types';
-import { useToast } from './Toast';
-import { cloudService } from '../services/cloudService';
 
 declare const XLSX: any;
 
@@ -23,18 +21,6 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
   const [backupAnalysis, setBackupAnalysis] = useState<any>(null);
 
   const inputRef = useRef<HTMLInputElement>(null);
-  const { addToast } = useToast();
-
-  // Sample Data for Templates
-  const ITEM_TEMPLATE = [
-    { "Item Name": "Coca Cola 2L", "Category": "Drinks", "Sales Price": 120, "Purchase Price": 80, "Opening Stock": 25, "Unit": "pcs" },
-    { "Item Name": "Real Juice 250ml", "Category": "General", "Sales Price": 50, "Purchase Price": 35, "Opening Stock": 60, "Unit": "pcs" }
-  ];
-
-  const PARTY_TEMPLATE = [
-    { "Party Name": "Hari Basnet", "Phone Number": "9800000000", "Customer/Supplier": "Customer", "Opening Balance": 500, "Receivable/Payable": "Receivable", "Address": "Kathmandu" },
-    { "Party Name": "ABC Traders", "Phone Number": "014000000", "Customer/Supplier": "Supplier", "Opening Balance": 10000, "Receivable/Payable": "Payable", "Address": "Pokhara" }
-  ];
 
   const resetState = () => {
     setFile(null);
@@ -74,7 +60,6 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
     if (e.target.files && e.target.files[0]) {
       handleFile(e.target.files[0]);
     }
-    // Clear input to allow re-selection
     e.target.value = '';
   };
 
@@ -85,52 +70,30 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
     setPreviewData([]);
     setBackupAnalysis(null);
     
-    // JSON Handling for Backup
     if (activeTab === 'backup') {
         const isJson = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
-        
         if (!isJson) {
              setError('Please upload a valid JSON backup file.');
              return;
         }
-
         const reader = new FileReader();
         reader.onload = (e) => {
             try {
                 const json = JSON.parse(e.target?.result as string);
-                
-                // Relaxed Validation check for legacy backups
-                if (!json.transactions && !json.profile && !json.accounts) {
-                     setError('Invalid backup file format. Missing core data.');
-                     return;
-                }
-                
                 setPreviewData([json]); 
-                // Generate Analysis
                 setBackupAnalysis({
-                    company: json.companyName || json.profile?.name || 'Unknown Company',
-                    date: json.generatedAt || json.timestamp || new Date().toISOString(),
+                    company: json.profile?.name || 'Unknown',
                     transactions: Array.isArray(json.transactions) ? json.transactions.length : 0,
                     products: Array.isArray(json.products) ? json.products.length : 0,
                     parties: Array.isArray(json.parties) ? json.parties.length : 0,
-                    accounts: Array.isArray(json.accounts) ? json.accounts.length : 0,
-                    reminders: Array.isArray(json.reminders) ? json.reminders.length : 0,
-                    serviceJobs: Array.isArray(json.serviceJobs) ? json.serviceJobs.length : 0,
-                    hasCashDrawer: !!json.cashDrawer && Array.isArray(json.cashDrawer.notes),
-                    version: json.backupVersion || json.appVersion || 'Legacy'
+                    date: json.timestamp || new Date().toISOString()
                 });
             } catch (err) {
-                setError('Failed to parse JSON file. It might be corrupted.');
+                setError('Failed to parse JSON file.');
             }
         };
         reader.readAsText(file);
         return;
-    }
-
-    // Excel Handling
-    if (typeof XLSX === 'undefined') {
-      setError('Excel processing library not loaded. Please check internet connection.');
-      return;
     }
 
     const reader = new FileReader();
@@ -138,361 +101,107 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
       try {
         const data = e.target?.result;
         const workbook = XLSX.read(data, { type: 'binary' });
-        const sheetName = workbook.SheetNames[0];
-        const sheet = workbook.Sheets[sheetName];
-        const json = XLSX.utils.sheet_to_json(sheet);
-        setPreviewData(json);
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        setPreviewData(XLSX.utils.sheet_to_json(sheet));
       } catch (err) {
-        setError('Failed to parse Excel file. Please ensure it is a valid .xlsx or .xls file.');
+        setError('Failed to parse Excel file.');
       }
     };
     reader.readAsBinaryString(file);
   };
 
-  const handleDownloadSample = () => {
-    if (typeof XLSX === 'undefined') {
-      setError('Library not loaded.');
-      return;
-    }
-
-    const data = activeTab === 'items' ? ITEM_TEMPLATE : PARTY_TEMPLATE;
-    const ws = XLSX.utils.json_to_sheet(data);
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Sample");
-    XLSX.writeFile(wb, `sample_${activeTab}.xlsx`);
-  };
-
   const handleImport = async () => {
     if (previewData.length === 0) return;
     setProcessing(true);
-    
     try {
       if (activeTab === 'backup') {
-          const data = previewData[0];
-          const result = await db.restoreData(data);
-          
+          const result = await db.restoreData(previewData[0]);
           if (result.success) {
-              setSuccess('Database restored successfully. Application will reload shortly...');
-              setTimeout(() => window.location.reload(), 2500);
+              setSuccess('Restored. Reloading...');
+              setTimeout(() => window.location.reload(), 2000);
           } else {
               setError(result.message);
           }
       } else if (activeTab === 'items') {
-        const newProducts: Product[] = [];
-        previewData.forEach((row: any, index: number) => {
-           if (!row["Item Name"]) return; // Skip invalid rows
-           
-           newProducts.push({
-             id: Date.now().toString() + index, 
+        const newProducts: Product[] = previewData.map((row, i) => ({
+             id: Date.now().toString() + i, 
              name: row["Item Name"],
              category: row["Category"] || 'General',
-             stock: Number(row["Opening Stock"] || row["Stock"] || row["stock"] || 0),
+             stock: Number(row["Opening Stock"] || 0),
              purchasePrice: Number(row["Purchase Price"]) || 0,
              salePrice: Number(row["Sales Price"]) || 0,
-             wholesalePrice: Number(row["Wholesale Price"]) || 0,
              unit: row["Unit"] || 'pcs'
-           });
-        });
+        }));
         await db.bulkAddProducts(newProducts);
-        setSuccess(`Successfully processed ${newProducts.length} items.`);
+        setSuccess(`Imported ${newProducts.length} items.`);
       } else {
-        // --- Parties Import ---
-        const existingParties = db.getParties();
-        const existingNames = new Set(existingParties.map(p => p.name.toLowerCase()));
-        
-        const newParties: Party[] = [];
-        const newTransactions: Transaction[] = [];
-
-        previewData.forEach((row: any, index: number) => {
-           if (!row["Party Name"]) return;
-           const name = row["Party Name"].trim();
-           
-           if (existingNames.has(name.toLowerCase())) return;
-           if (newParties.some(p => p.name.toLowerCase() === name.toLowerCase())) return;
-           
-           let balance = Number(row["Opening Balance"]) || 0;
-           const typeStr = (row["Receivable/Payable"] || "").toLowerCase();
-           if (typeStr.includes('payable')) {
-             balance = -Math.abs(balance);
-           } else {
-             balance = Math.abs(balance);
-           }
-
-           const partyId = `${Date.now()}_${index}`;
-
-           newParties.push({
-             id: partyId,
-             name: name,
+        const newParties: Party[] = previewData.map((row, i) => ({
+             id: Date.now().toString() + i,
+             name: row["Party Name"],
              phone: row["Phone Number"] || '',
              type: (row["Customer/Supplier"] || 'Customer').toLowerCase().includes('supplier') ? 'supplier' : 'customer',
-             address: row["Address"],
              balance: 0 
-           });
-
-           if (balance !== 0) {
-               newTransactions.push({
-                   id: `OP-IMP-${partyId}`,
-                   date: new Date().toISOString(),
-                   type: 'BALANCE_ADJUSTMENT',
-                   partyId: partyId,
-                   partyName: name,
-                   items: [],
-                   totalAmount: balance,
-                   notes: 'Opening Balance (Imported)',
-                   category: 'Opening Balance',
-                   paymentMode: 'Adjustment'
-               });
-           }
-        });
-
-        if (newParties.length > 0) {
-            await db.bulkAddParties(newParties);
-            newTransactions.forEach(t => db.addTransaction(t));
-            setSuccess(`Successfully processed ${newParties.length} new parties.`);
-        } else {
-            setSuccess('No new parties found to import (duplicates skipped).');
-        }
-      }
-      
-      if (activeTab !== 'backup') {
-        setFile(null);
-        setPreviewData([]);
+        }));
+        await db.bulkAddParties(newParties);
+        setSuccess(`Imported ${newParties.length} parties.`);
       }
     } catch (err) {
-      setError('Error importing data. Please check file format.');
-      console.error(err);
+      setError('Import failed.');
     } finally {
       setProcessing(false);
     }
   };
 
-  const getTitle = () => {
-      if (activeTab === 'backup') return 'Restore Database';
-      return activeTab === 'items' ? 'Import Items' : 'Import Parties';
-  };
-
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4">
+    <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-xl font-bold text-gray-800">{getTitle()}</h2>
+        <h2 className="text-xl font-bold text-gray-800">Point-in-Time Restore</h2>
         <div className="flex bg-gray-100 p-1 rounded-lg">
-           <button 
-             onClick={() => switchTab('items')}
-             className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'items' ? 'bg-white shadow-sm text-brand-600' : 'text-gray-600'}`}
-           >
-             Import Items
-           </button>
-           <button 
-             onClick={() => switchTab('parties')}
-             className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'parties' ? 'bg-white shadow-sm text-brand-600' : 'text-gray-600'}`}
-           >
-             Import Parties
-           </button>
-           <button 
-             onClick={() => switchTab('backup')}
-             className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'backup' ? 'bg-white shadow-sm text-brand-600' : 'text-gray-600'}`}
-           >
-             Restore Backup
-           </button>
+           <button onClick={() => switchTab('items')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'items' ? 'bg-white shadow-sm text-brand-600' : 'text-gray-600'}`}>Import Items</button>
+           <button onClick={() => switchTab('parties')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'parties' ? 'bg-white shadow-sm text-brand-600' : 'text-gray-600'}`}>Import Parties</button>
+           <button onClick={() => switchTab('backup')} className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'backup' ? 'bg-white shadow-sm text-brand-600' : 'text-gray-600'}`}>Restore DB</button>
         </div>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-         <div className="bg-white p-6 rounded-xl border border-gray-200 h-fit">
-            <h3 className="font-bold text-lg mb-6 text-gray-800">
-               {activeTab === 'backup' ? 'Restore Instructions' : `Import ${activeTab === 'items' ? 'Items' : 'Parties'} in 3 Steps`}
-            </h3>
-
+         <div className="bg-white p-6 rounded-xl border border-gray-200">
+            <h3 className="font-bold text-lg mb-6 text-gray-800">Manual Data Entry</h3>
             {activeTab === 'backup' ? (
-                <div className="space-y-6">
-                    <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 text-orange-800 text-sm flex gap-3">
-                        <AlertCircle className="w-5 h-5 shrink-0" />
-                        <div>
-                            <strong>Warning:</strong> Restoring a backup will completely <u>replace</u> your current data (Items, Parties, Transactions, Service Jobs, and Physical Cash Drawer State).
-                        </div>
-                    </div>
-                    <div>
-                        <h4 className="font-semibold text-gray-900 mb-2">1. Locate Backup File</h4>
-                        <p className="text-sm text-gray-500 mb-3">
-                            Find the <code>.json</code> file you previously downloaded using the "Backup Data" button in settings.
-                        </p>
-                    </div>
-                    <div>
-                        <h4 className="font-semibold text-gray-900 mb-2">2. Review & Restore</h4>
-                        <p className="text-sm text-gray-500">
-                            Upload the file to see a summary of the data inside. Click "Confirm & Restore" to apply.
-                        </p>
-                    </div>
+                <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 text-orange-800 text-sm">
+                    <strong>Warning:</strong> Restoring a backup overwrites everything.
                 </div>
             ) : (
-                <div className="space-y-8">
-                <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">1. Download the file & Fill Data</h4>
-                    <p className="text-sm text-gray-500 mb-3">
-                        Download our sample excel file and enter your data according to the file format.
-                    </p>
-                    <button 
-                        onClick={handleDownloadSample}
-                        className="flex items-center gap-2 px-4 py-2 bg-gray-50 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 hover:bg-gray-100 transition-colors"
-                    >
-                        <Download className="w-4 h-4" />
-                        Download Sample File
-                    </button>
-                </div>
-                <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">2. Review & Adjust Data</h4>
-                    <p className="text-sm text-gray-500">
-                        Review the data to be imported from the app.
-                    </p>
-                </div>
-                <div>
-                    <h4 className="font-semibold text-gray-900 mb-2">3. Confirm & Import</h4>
-                    <p className="text-sm text-gray-500">
-                        When everything is ready to import you can start the process.
-                    </p>
-                </div>
-                </div>
+                <p className="text-sm text-gray-500">Upload Excel template files to quickly populate your database.</p>
             )}
          </div>
 
-         <div className="space-y-4">
-             {!backupAnalysis && (
-                 <div 
-                   className={`border-2 border-dashed rounded-xl h-80 flex flex-col items-center justify-center transition-all cursor-pointer bg-gray-50
-                      ${dragActive ? 'border-brand-500 bg-brand-50' : 'border-gray-300 hover:border-brand-400 hover:bg-gray-100'}
-                      ${file ? 'bg-emerald-50 border-emerald-500' : ''}
-                   `}
-                   onDragEnter={handleDrag} 
-                   onDragLeave={handleDrag} 
-                   onDragOver={handleDrag} 
-                   onDrop={handleDrop}
-                   onClick={() => inputRef.current?.click()}
-                 >
-                    <input ref={inputRef} type="file" className="hidden" accept={activeTab === 'backup' ? ".json" : ".xlsx, .xls"} onChange={handleChange} />
-                    
-                    {file ? (
-                       <div className="text-center p-6">
-                          {activeTab === 'backup' ? (
-                              <Database className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
-                          ) : (
-                              <FileSpreadsheet className="w-16 h-16 text-emerald-500 mx-auto mb-4" />
-                          )}
-                          <p className="font-bold text-gray-800 text-lg mb-1">{file.name}</p>
-                          <p className="text-sm text-gray-500">{(file.size / 1024).toFixed(2)} KB</p>
-                          {previewData.length > 0 && activeTab !== 'backup' && (
-                             <div className="mt-4 inline-block bg-white px-3 py-1 rounded-full text-xs font-semibold text-emerald-700 border border-emerald-200">
-                                {previewData.length} records found
-                             </div>
-                          )}
-                          <p className="text-xs text-gray-400 mt-8">Click to replace file</p>
-                       </div>
-                    ) : (
-                       <div className="text-center p-6">
-                          <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
-                          <p className="font-bold text-gray-800 text-lg mb-2">Click to Upload or drag and drop</p>
-                          <p className="text-sm text-gray-500">
-                             {activeTab === 'backup' ? 'Only .json backup files' : 'Only excel files (.xlsx, .xls)'}
-                          </p>
-                       </div>
-                    )}
-                 </div>
-             )}
-
-             {backupAnalysis && activeTab === 'backup' && (
-                 <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm animate-in fade-in zoom-in-95">
-                     <div className="bg-brand-500 p-4 text-white flex justify-between items-center">
-                         <div className="font-bold flex items-center gap-2">
-                             <Database className="w-5 h-5" />
-                             Backup Verification
-                         </div>
-                         <button onClick={() => { setBackupAnalysis(null); setFile(null); }} className="text-white/80 hover:text-white text-xs bg-brand-600 px-2 py-1 rounded">
-                             Change File
-                         </button>
-                     </div>
-                     <div className="p-5 space-y-4">
-                         <div className="flex items-center gap-4 border-b border-gray-100 pb-4">
-                             <div className="w-12 h-12 bg-blue-50 text-blue-600 rounded-full flex items-center justify-center font-bold text-xl shrink-0">
-                                 {backupAnalysis.company.substring(0,1).toUpperCase()}
-                             </div>
-                             <div>
-                                 <h3 className="font-bold text-gray-800">{backupAnalysis.company}</h3>
-                                 <p className="text-xs text-gray-500">Date: {new Date(backupAnalysis.date).toLocaleString()}</p>
-                             </div>
-                         </div>
-                         
-                         <div className="grid grid-cols-3 gap-3 text-center">
-                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                 <Receipt className="w-5 h-5 mx-auto text-gray-400 mb-1" />
-                                 <div className="font-bold text-gray-800">{backupAnalysis.transactions}</div>
-                                 <div className="text-[10px] text-gray-500 uppercase">Transactions</div>
-                             </div>
-                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                 <Package className="w-5 h-5 mx-auto text-gray-400 mb-1" />
-                                 <div className="font-bold text-gray-800">{backupAnalysis.products}</div>
-                                 <div className="text-[10px] text-gray-500 uppercase">Products</div>
-                             </div>
-                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                 <Users className="w-5 h-5 mx-auto text-gray-400 mb-1" />
-                                 <div className="font-bold text-gray-800">{backupAnalysis.parties}</div>
-                                 <div className="text-[10px] text-gray-500 uppercase">Parties</div>
-                             </div>
-                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                 <Banknote className="w-5 h-5 mx-auto text-gray-400 mb-1" />
-                                 <div className={`font-bold ${backupAnalysis.hasCashDrawer ? 'text-emerald-600' : 'text-red-400'}`}>
-                                    {backupAnalysis.hasCashDrawer ? 'YES' : 'NO'}
-                                 </div>
-                                 <div className="text-[10px] text-gray-500 uppercase">Cash Notes</div>
-                             </div>
-                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                 <Wrench className="w-5 h-5 mx-auto text-gray-400 mb-1" />
-                                 <div className="font-bold text-gray-800">{backupAnalysis.serviceJobs}</div>
-                                 <div className="text-[10px] text-gray-500 uppercase">Service</div>
-                             </div>
-                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                 <Landmark className="w-5 h-5 mx-auto text-gray-400 mb-1" />
-                                 <div className="font-bold text-gray-800">{backupAnalysis.accounts}</div>
-                                 <div className="text-[10px] text-gray-500 uppercase">Accounts</div>
-                             </div>
-                         </div>
-
-                         <div className="bg-red-50 text-red-700 p-3 rounded-lg text-xs flex gap-2 items-start border border-red-100">
-                             <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                             <p>Confirming restore will <b>permanently overwrite</b> existing data. This includes current physical cash counts in the drawer.</p>
-                         </div>
-                     </div>
-                 </div>
-             )}
-
-             {error && (
-                <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3 text-red-700">
-                   <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                   <p className="text-sm">{error}</p>
-                </div>
-             )}
-
-             {success && (
-                <div className="bg-green-50 border border-green-200 rounded-lg p-4 flex items-start gap-3 text-green-700">
-                   <CheckCircle className="w-5 h-5 shrink-0 mt-0.5" />
-                   <p className="text-sm">{success}</p>
-                </div>
-             )}
-
-             {(previewData.length > 0 || backupAnalysis) && !success && (
-                <button 
-                  onClick={handleImport}
-                  disabled={processing}
-                  className={`w-full py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 ${
-                      activeTab === 'backup' 
-                        ? 'bg-red-500 hover:bg-red-600 shadow-red-500/30' 
-                        : 'bg-brand-500 hover:bg-brand-600 shadow-brand-500/30'
-                  }`}
-                >
-                  {processing ? 'Processing...' : (activeTab === 'backup' ? 'Confirm & Restore Everything' : 'Confirm & Import Data')}
-                  {!processing && (activeTab === 'backup' ? <RefreshCcw className="w-5 h-5" /> : <ArrowRight className="w-5 h-5" />)}
-                </button>
-             )}
+         <div 
+           className={`border-2 border-dashed rounded-xl h-64 flex flex-col items-center justify-center transition-all cursor-pointer bg-gray-50
+              ${dragActive ? 'border-brand-500 bg-brand-50' : 'border-gray-300 hover:border-brand-400'}
+           `}
+           onDragEnter={handleDrag} onDragLeave={handleDrag} onDragOver={handleDrag} onDrop={handleDrop}
+           onClick={() => inputRef.current?.click()}
+         >
+            <input ref={inputRef} type="file" className="hidden" accept={activeTab === 'backup' ? ".json" : ".xlsx, .xls"} onChange={handleChange} />
+            {file ? (
+               <div className="text-center">
+                  <Database className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
+                  <p className="font-bold text-gray-800">{file.name}</p>
+                  {backupAnalysis && <p className="text-xs text-gray-500 mt-1">{backupAnalysis.transactions} Txns | {backupAnalysis.products} Items</p>}
+                  <button onClick={handleImport} disabled={processing} className="mt-4 px-6 py-2 bg-brand-500 text-white rounded-lg font-bold">
+                    {processing ? 'Restoring...' : 'Confirm Restore'}
+                  </button>
+               </div>
+            ) : (
+               <div className="text-center">
+                  <Upload className="w-12 h-12 text-gray-400 mx-auto mb-2" />
+                  <p className="font-bold text-gray-800">Click to upload file</p>
+               </div>
+            )}
          </div>
       </div>
+      {error && <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg">{error}</div>}
+      {success && <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg">{success}</div>}
     </div>
   );
 };

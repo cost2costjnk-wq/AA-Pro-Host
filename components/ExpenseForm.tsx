@@ -66,9 +66,26 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
     }
   }, [initialData]);
 
-  const handleSave = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!amount || !category) return;
+  // Form Shortcut Keys
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 's') {
+        e.preventDefault();
+        triggerSave();
+      }
+      if (e.key === 'Escape') {
+        if (!showCashModal) onClose();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [amount, category, expNo, date, remarks, paidTo, selectedAccountId, showCashModal]);
+
+  const triggerSave = () => {
+    if (!amount || !category) {
+      addToast('Please fill required fields (Amount and Category)', 'error');
+      return;
+    }
     
     const account = accounts.find(a => a.id === selectedAccountId);
     const isCash = account?.type === 'Cash';
@@ -96,6 +113,11 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
     }
 
     onSave();
+  };
+
+  const handleSave = (e: React.FormEvent) => {
+    e.preventDefault();
+    triggerSave();
   };
 
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
@@ -301,6 +323,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
                           {returnedNotes.map((n, i) => (
                               <div key={n.denomination} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${n.count > 0 ? 'bg-brand-50 border-brand-200' : 'bg-white border-gray-100'}`}>
                                   <div className="flex items-center gap-3">
+                                    {/* Fix: changed note.denomination to n.denomination */}
                                     <div className={`w-10 h-7 rounded flex items-center justify-center font-bold text-xs ${n.denomination >= 500 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{n.denomination}</div>
                                     <X className="w-3 h-3 text-gray-300" />
                                   </div>
