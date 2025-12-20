@@ -1,0 +1,5 @@
+{
+  "name": " AA Pro",
+  "description": "An enterprise-grade Business Management & POS system. Features multi-company support, AI analytics, offline-first IndexedDB storage, and real-time cashflow tracking.",
+  "requestFramePermissions": []
+}
