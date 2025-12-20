@@ -109,15 +109,15 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
                 // Generate Analysis
                 setBackupAnalysis({
                     company: json.companyName || json.profile?.name || 'Unknown Company',
-                    date: json.generatedAt || new Date().toISOString(),
+                    date: json.generatedAt || json.timestamp || new Date().toISOString(),
                     transactions: Array.isArray(json.transactions) ? json.transactions.length : 0,
                     products: Array.isArray(json.products) ? json.products.length : 0,
                     parties: Array.isArray(json.parties) ? json.parties.length : 0,
                     accounts: Array.isArray(json.accounts) ? json.accounts.length : 0,
                     reminders: Array.isArray(json.reminders) ? json.reminders.length : 0,
                     serviceJobs: Array.isArray(json.serviceJobs) ? json.serviceJobs.length : 0,
-                    hasCashDrawer: !!json.cashDrawer,
-                    version: json.appVersion || 'Legacy'
+                    hasCashDrawer: !!json.cashDrawer && Array.isArray(json.cashDrawer.notes),
+                    version: json.backupVersion || json.appVersion || 'Legacy'
                 });
             } catch (err) {
                 setError('Failed to parse JSON file. It might be corrupted.');
@@ -162,60 +162,6 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
     XLSX.writeFile(wb, `sample_${activeTab}.xlsx`);
   };
 
-  const handleBackup = async () => {
-    try {
-      const jsonString = cloudService.generateBackupData();
-      
-      const now = new Date();
-      // Format: YYYY-MM-DD_HH-mm-ss
-      const pad = (n: number) => String(n).padStart(2, '0');
-      const datePart = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
-      const timePart = `${pad(now.getHours())}-${pad(now.getMinutes())}-${pad(now.getSeconds())}`;
-      const fileName = `aapro_backup_${datePart}_${timePart}.json`;
-
-      let usedPicker = false;
-
-      // Try File System Access API to let user pick folder
-      if ('showSaveFilePicker' in window) {
-        try {
-          const handle = await (window as any).showSaveFilePicker({
-            suggestedName: fileName,
-            types: [{
-              description: 'JSON Backup File',
-              accept: { 'application/json': ['.json'] },
-            }],
-          });
-          const writable = await handle.createWritable();
-          await writable.write(jsonString);
-          await writable.close();
-          addToast('Backup saved successfully', 'success');
-          usedPicker = true;
-        } catch (err: any) {
-           if (err.name === 'AbortError') return; // Cancelled
-           console.warn("File picker skipped/failed, falling back to download:", err);
-        }
-      }
-      
-      if (!usedPicker) {
-          // Fallback to standard download
-          const blob = new Blob([jsonString], { type: 'application/json' });
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = fileName;
-          document.body.appendChild(a);
-          a.click();
-          document.body.removeChild(a);
-          URL.revokeObjectURL(url);
-          
-          addToast('Backup file downloaded', 'success');
-      }
-    } catch (e) {
-      console.error(e);
-      addToast('Failed to generate backup', 'error');
-    }
-  };
-
   const handleImport = async () => {
     if (previewData.length === 0) return;
     setProcessing(true);
@@ -237,7 +183,7 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
            if (!row["Item Name"]) return; // Skip invalid rows
            
            newProducts.push({
-             id: Date.now().toString() + index, // Generate ID (ignored if exists in DB logic)
+             id: Date.now().toString() + index, 
              name: row["Item Name"],
              category: row["Category"] || 'General',
              stock: Number(row["Opening Stock"] || row["Stock"] || row["stock"] || 0),
@@ -250,7 +196,7 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
         await db.bulkAddProducts(newProducts);
         setSuccess(`Successfully processed ${newProducts.length} items.`);
       } else {
-        // --- Parties Import Logic ---
+        // --- Parties Import ---
         const existingParties = db.getParties();
         const existingNames = new Set(existingParties.map(p => p.name.toLowerCase()));
         
@@ -261,23 +207,19 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
            if (!row["Party Name"]) return;
            const name = row["Party Name"].trim();
            
-           // Skip if party already exists
            if (existingNames.has(name.toLowerCase())) return;
-           // Skip duplicates in the import file
            if (newParties.some(p => p.name.toLowerCase() === name.toLowerCase())) return;
            
            let balance = Number(row["Opening Balance"]) || 0;
            const typeStr = (row["Receivable/Payable"] || "").toLowerCase();
-           // Logic: Receivable = Positive, Payable = Negative
            if (typeStr.includes('payable')) {
              balance = -Math.abs(balance);
            } else {
              balance = Math.abs(balance);
            }
 
-           const partyId = `${Date.now()}_${index}`; // Generate a robust ID
+           const partyId = `${Date.now()}_${index}`;
 
-           // 1. Create Party with 0 balance initially
            newParties.push({
              id: partyId,
              name: name,
@@ -287,7 +229,6 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
              balance: 0 
            });
 
-           // 2. Prepare Opening Balance Transaction
            if (balance !== 0) {
                newTransactions.push({
                    id: `OP-IMP-${partyId}`,
@@ -306,7 +247,6 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
 
         if (newParties.length > 0) {
             await db.bulkAddParties(newParties);
-            // Add transactions individually to trigger correct balance updates in DB
             newTransactions.forEach(t => db.addTransaction(t));
             setSuccess(`Successfully processed ${newParties.length} new parties.`);
         } else {
@@ -358,7 +298,6 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-         {/* Left: Instructions */}
          <div className="bg-white p-6 rounded-xl border border-gray-200 h-fit">
             <h3 className="font-bold text-lg mb-6 text-gray-800">
                {activeTab === 'backup' ? 'Restore Instructions' : `Import ${activeTab === 'items' ? 'Items' : 'Parties'} in 3 Steps`}
@@ -369,7 +308,7 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
                     <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 text-orange-800 text-sm flex gap-3">
                         <AlertCircle className="w-5 h-5 shrink-0" />
                         <div>
-                            <strong>Warning:</strong> Restoring a backup will completely <u>replace</u> your current data (Items, Parties, Transactions, Service Jobs, and Cash Drawer). Ensure you have a backup of the current state if needed.
+                            <strong>Warning:</strong> Restoring a backup will completely <u>replace</u> your current data (Items, Parties, Transactions, Service Jobs, and Physical Cash Drawer State).
                         </div>
                     </div>
                     <div>
@@ -400,29 +339,22 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
                         Download Sample File
                     </button>
                 </div>
-
                 <div>
                     <h4 className="font-semibold text-gray-900 mb-2">2. Review & Adjust Data</h4>
                     <p className="text-sm text-gray-500">
-                        Review the data to be imported from the app. If there are any errors, fix it in the excel and re-upload.
+                        Review the data to be imported from the app.
                     </p>
                 </div>
-
                 <div>
                     <h4 className="font-semibold text-gray-900 mb-2">3. Confirm & Import</h4>
                     <p className="text-sm text-gray-500">
-                        When everything is ready to import you can start the import process.
-                        <br/>
-                        <span className="text-emerald-600 font-medium text-xs mt-1 block">
-                            Note: Duplicate entries (by name) will be skipped to prevent errors.
-                        </span>
+                        When everything is ready to import you can start the process.
                     </p>
                 </div>
                 </div>
             )}
          </div>
 
-         {/* Right: Upload Zone */}
          <div className="space-y-4">
              {!backupAnalysis && (
                  <div 
@@ -459,20 +391,19 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
                           <Upload className="w-16 h-16 text-gray-400 mx-auto mb-4" />
                           <p className="font-bold text-gray-800 text-lg mb-2">Click to Upload or drag and drop</p>
                           <p className="text-sm text-gray-500">
-                             {activeTab === 'backup' ? 'Only .json backup files are supported' : 'Only excel files (.xlsx, .xls) are supported.'}
+                             {activeTab === 'backup' ? 'Only .json backup files' : 'Only excel files (.xlsx, .xls)'}
                           </p>
                        </div>
                     )}
                  </div>
              )}
 
-             {/* Backup Analysis Card */}
              {backupAnalysis && activeTab === 'backup' && (
                  <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm animate-in fade-in zoom-in-95">
                      <div className="bg-brand-500 p-4 text-white flex justify-between items-center">
                          <div className="font-bold flex items-center gap-2">
                              <Database className="w-5 h-5" />
-                             Backup Data Verification
+                             Backup Verification
                          </div>
                          <button onClick={() => { setBackupAnalysis(null); setFile(null); }} className="text-white/80 hover:text-white text-xs bg-brand-600 px-2 py-1 rounded">
                              Change File
@@ -485,7 +416,7 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
                              </div>
                              <div>
                                  <h3 className="font-bold text-gray-800">{backupAnalysis.company}</h3>
-                                 <p className="text-xs text-gray-500">Backup Date: {new Date(backupAnalysis.date).toLocaleString()}</p>
+                                 <p className="text-xs text-gray-500">Date: {new Date(backupAnalysis.date).toLocaleString()}</p>
                              </div>
                          </div>
                          
@@ -506,31 +437,32 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
                                  <div className="text-[10px] text-gray-500 uppercase">Parties</div>
                              </div>
                              <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
+                                 <Banknote className="w-5 h-5 mx-auto text-gray-400 mb-1" />
+                                 <div className={`font-bold ${backupAnalysis.hasCashDrawer ? 'text-emerald-600' : 'text-red-400'}`}>
+                                    {backupAnalysis.hasCashDrawer ? 'YES' : 'NO'}
+                                 </div>
+                                 <div className="text-[10px] text-gray-500 uppercase">Cash Notes</div>
+                             </div>
+                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
                                  <Wrench className="w-5 h-5 mx-auto text-gray-400 mb-1" />
                                  <div className="font-bold text-gray-800">{backupAnalysis.serviceJobs}</div>
-                                 <div className="text-[10px] text-gray-500 uppercase">Service Jobs</div>
+                                 <div className="text-[10px] text-gray-500 uppercase">Service</div>
                              </div>
                              <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                 <Banknote className="w-5 h-5 mx-auto text-gray-400 mb-1" />
-                                 <div className="font-bold text-emerald-600">{backupAnalysis.hasCashDrawer ? 'Yes' : 'No'}</div>
-                                 <div className="text-[10px] text-gray-500 uppercase">Cash Drawer</div>
-                             </div>
-                             <div className="bg-gray-50 p-3 rounded-lg border border-gray-100">
-                                 <Bell className="w-5 h-5 mx-auto text-gray-400 mb-1" />
-                                 <div className="font-bold text-gray-800">{backupAnalysis.reminders}</div>
-                                 <div className="text-[10px] text-gray-500 uppercase">Reminders</div>
+                                 <Landmark className="w-5 h-5 mx-auto text-gray-400 mb-1" />
+                                 <div className="font-bold text-gray-800">{backupAnalysis.accounts}</div>
+                                 <div className="text-[10px] text-gray-500 uppercase">Accounts</div>
                              </div>
                          </div>
 
                          <div className="bg-red-50 text-red-700 p-3 rounded-lg text-xs flex gap-2 items-start border border-red-100">
                              <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
-                             <p>Confirming restore will <b>permanently overwrite</b> your existing data for "{db.getBusinessProfile().name}".</p>
+                             <p>Confirming restore will <b>permanently overwrite</b> existing data. This includes current physical cash counts in the drawer.</p>
                          </div>
                      </div>
                  </div>
              )}
 
-             {/* Action Buttons / Status */}
              {error && (
                 <div className="bg-red-50 border border-red-200 rounded-lg p-4 flex items-start gap-3 text-red-700">
                    <AlertCircle className="w-5 h-5 shrink-0 mt-0.5" />
@@ -545,10 +477,9 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
                 </div>
              )}
 
-             {/* Import Button */}
              {(previewData.length > 0 || backupAnalysis) && !success && (
                 <button 
-                  onClick={activeTab === 'backup' ? handleImport : handleBackup}
+                  onClick={handleImport}
                   disabled={processing}
                   className={`w-full py-3 text-white rounded-xl font-bold shadow-lg transition-all flex items-center justify-center gap-2 ${
                       activeTab === 'backup' 
@@ -559,17 +490,6 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
                   {processing ? 'Processing...' : (activeTab === 'backup' ? 'Confirm & Restore Everything' : 'Confirm & Import Data')}
                   {!processing && (activeTab === 'backup' ? <RefreshCcw className="w-5 h-5" /> : <ArrowRight className="w-5 h-5" />)}
                 </button>
-             )}
-             
-             {activeTab !== 'backup' && previewData.length > 0 && !success && (
-                 <button 
-                    onClick={handleImport}
-                    disabled={processing}
-                    className="w-full py-3 text-white bg-emerald-500 rounded-xl font-bold shadow-lg hover:bg-emerald-600 transition-all flex items-center justify-center gap-2"
-                 >
-                    {processing ? 'Processing...' : 'Start Import'}
-                    {!processing && <ArrowRight className="w-5 h-5" />}
-                 </button>
              )}
          </div>
       </div>

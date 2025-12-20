@@ -386,12 +386,20 @@ export class DatabaseService {
   }
 
   getBackupData() {
-    return { ...this.cache, backupVersion: '2.0', companyId: this.activeCompanyId, timestamp: new Date().toISOString() };
+    // Explicitly clone current cache to ensure all properties like cashDrawer are included
+    return JSON.parse(JSON.stringify({ 
+      ...this.cache, 
+      backupVersion: '2.1', 
+      companyId: this.activeCompanyId, 
+      timestamp: new Date().toISOString(),
+      appId: 'AA_PRO_ENTERPRISE'
+    }));
   }
 
   async restoreData(data: any) {
      if (!data || typeof data !== 'object') return { success: false, message: 'Invalid file format' };
      try {
+         // Deep merge/validate core properties
          const validated: CompanyData = {
              ...DEFAULT_COMPANY_DATA,
              profile: { ...DEFAULT_COMPANY_DATA.profile, ...(data.profile || {}) },
@@ -401,8 +409,11 @@ export class DatabaseService {
              transactions: Array.isArray(data.transactions) ? data.transactions : [],
              reminders: Array.isArray(data.reminders) ? data.reminders : [],
              serviceJobs: Array.isArray(data.serviceJobs) ? data.serviceJobs : [],
-             cashDrawer: data.cashDrawer || DEFAULT_CASH_DRAWER
+             replenishmentDraft: Array.isArray(data.replenishmentDraft) ? data.replenishmentDraft : [],
+             // Deep restore cash drawer or fallback to empty template
+             cashDrawer: data.cashDrawer ? JSON.parse(JSON.stringify(data.cashDrawer)) : JSON.parse(JSON.stringify(DEFAULT_CASH_DRAWER))
          };
+         
          this.cache = validated;
          this.persist();
          return { success: true };
@@ -498,7 +509,7 @@ export class DatabaseService {
           transactions: [],
           serviceJobs: [],
           reminders: [],
-          cashDrawer: { ...this.cache.cashDrawer }
+          cashDrawer: JSON.parse(JSON.stringify(this.cache.cashDrawer))
       };
       this.companies.push(newCompany);
       localStorage.setItem('aapro_companies', JSON.stringify(this.companies));

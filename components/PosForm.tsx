@@ -4,7 +4,7 @@ import { db } from '../services/db';
 import { Party, Product, Transaction, TransactionItem, Account, CashNoteCount, Denomination, CashDrawer } from '../types';
 import { formatCurrency } from '../services/formatService';
 import NepaliDatePicker from './NepaliDatePicker';
-import { Plus, Trash2, Save, X, Zap, ChevronDown, Search, AlertCircle, Check, Tag, TrendingUp, DollarSign, Banknote, RotateCcw, Sparkles } from 'lucide-react';
+import { Plus, Trash2, Save, X, Zap, ChevronDown, Search, AlertCircle, Check, Tag, TrendingUp, DollarSign, Banknote, RotateCcw, Sparkles, ShoppingCart, Percent } from 'lucide-react';
 import { useToast } from './Toast';
 
 const DENOMINATIONS: Denomination[] = [1000, 500, 100, 50, 20, 10, 5, 2, 1];
@@ -117,8 +117,6 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
       setPartySearchTerm(party ? party.name : data.partyName);
       setInvoiceDate(data.date);
       
-      // If we are "converting" (e.g. Quotation -> Sale), we want a NEW invoice no.
-      // If we are "editing" (e.g. Sale -> Sale), we want to keep the ID.
       const isConversion = data.id === '' || (data.type !== type);
       if (isConversion) {
           setInvoiceNo(getNextInvoiceNo());
@@ -154,6 +152,29 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
           setReceivedNotes(data.cashBreakdown.received);
           setReturnedNotes(data.cashBreakdown.returned);
       }
+  };
+
+  const handlePricingModeChange = (mode: 'retail' | 'wholesale' | 'cost') => {
+      setPricingMode(mode);
+      const updatedItems = items.map(item => {
+          if (!item.productId) return item;
+          const product = products.find(p => p.id === item.productId);
+          if (!product) return item;
+
+          let newRate = mode === 'retail' ? product.salePrice : (mode === 'wholesale' ? (product.wholesalePrice || product.salePrice) : product.purchasePrice);
+          
+          if (item.unit && product.secondaryUnit && item.unit === product.secondaryUnit && product.conversionRatio) {
+              newRate = parseFloat((newRate / product.conversionRatio).toFixed(2));
+          }
+
+          return {
+              ...item,
+              rate: newRate,
+              amount: (Number(item.quantity) || 0) * newRate - (Number(item.discountAmount) || 0)
+          };
+      });
+      setItems(updatedItems);
+      addToast(`Switched to ${mode} pricing mode. All rates updated.`, 'info');
   };
 
   const handleQuickCashSale = () => {
@@ -308,7 +329,6 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
           cashBreakdown: (paymentModeStr === 'Cash') ? { received: receivedNotes, returned: returnedNotes } : undefined
       };
 
-      // Check if we are UPDATING an existing record or SAVING a new/converted one
       const isActuallyEditing = initialData && initialData.id === invoiceNo && initialData.type === type;
 
       if (isActuallyEditing) { 
@@ -349,7 +369,6 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
           return;
       }
 
-      // Create a map of available notes including the ones just received
       const availableNotesMap = new Map<Denomination, number>();
       drawer.notes.forEach(n => availableNotesMap.set(n.denomination, n.count));
       receivedNotes.forEach(n => {
@@ -359,7 +378,6 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
 
       const suggestions: CashNoteCount[] = [];
       
-      // Greedily pick denominations from highest to lowest
       for (const denom of DENOMINATIONS) {
           const availableCount = availableNotesMap.get(denom) || 0;
           if (availableCount > 0 && changeNeeded >= denom) {
@@ -390,6 +408,28 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
             </div>
          </div>
          <div className="flex items-center gap-3">
+            {(type === 'SALE' || type === 'QUOTATION') && (
+                <div className="flex items-center bg-gray-100 rounded-xl p-1 border border-gray-200 mr-4 shadow-inner">
+                    <button 
+                        onClick={() => handlePricingModeChange('retail')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-1.5 ${pricingMode === 'retail' ? 'bg-white text-brand-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        <Tag className="w-3 h-3" /> Retail
+                    </button>
+                    <button 
+                        onClick={() => handlePricingModeChange('wholesale')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-1.5 ${pricingMode === 'wholesale' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        <Percent className="w-3 h-3" /> Wholesale
+                    </button>
+                    <button 
+                        onClick={() => handlePricingModeChange('cost')}
+                        className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-1.5 ${pricingMode === 'cost' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                    >
+                        <DollarSign className="w-3 h-3" /> Cost
+                    </button>
+                </div>
+            )}
             <div className="text-right mr-4 hidden md:block">
                 <span className="block text-xs text-gray-500 uppercase tracking-wider">Total Amount</span>
                 <span className="block text-xl font-bold text-brand-600">{formatCurrency(grandTotal)}</span>
@@ -505,7 +545,6 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
                   </div>
 
                   <div className="flex-1 overflow-y-auto p-6 grid grid-cols-1 md:grid-cols-2 gap-8">
-                      {/* Received Section */}
                       <div className="space-y-4">
                           <h4 className="font-bold text-gray-800 border-b pb-2 flex justify-between items-center">
                               <span>RECEIVED FROM CUSTOMER</span>
@@ -528,7 +567,6 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
                           </div>
                       </div>
 
-                      {/* Returned Section */}
                       <div className="space-y-4">
                           <h4 className="font-bold text-gray-800 border-b pb-2 flex justify-between items-center">
                               <span>GIVE BACK (CHANGE)</span>
@@ -585,8 +623,6 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
               </div>
           </div>
       )}
-      
-      {/* Price Update & Quick Add Party modals remain as before */}
     </div>
   );
 };

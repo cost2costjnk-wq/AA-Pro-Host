@@ -22,6 +22,7 @@ import LoginPage from './components/LoginPage';
 import { Transaction, TransactionItem } from './types';
 import { db } from './services/db';
 import { authService } from './services/authService';
+import { autoBackupService } from './services/autoBackupService';
 import { Loader2 } from 'lucide-react';
 import { useToast } from './components/Toast';
 
@@ -54,6 +55,8 @@ const App: React.FC = () => {
         if (db.getActiveCompanyId()) {
            setCompanySelected(true);
            setIsDbReady(true);
+           // Start background services
+           autoBackupService.start();
         } else {
            localStorage.removeItem('active_company_id');
            setIsDbReady(true);
@@ -65,7 +68,11 @@ const App: React.FC = () => {
     checkCompany();
 
     const handleDbUpdate = () => setRefreshKey(prev => prev + 1);
-    const handleDbLogout = () => { setCompanySelected(false); setActiveTab('dashboard'); };
+    const handleDbLogout = () => { 
+        setCompanySelected(false); 
+        setActiveTab('dashboard'); 
+        autoBackupService.stop();
+    };
     
     window.addEventListener('db-updated', handleDbUpdate);
     window.addEventListener('db-logout', handleDbLogout);
@@ -73,6 +80,7 @@ const App: React.FC = () => {
     return () => {
        window.removeEventListener('db-updated', handleDbUpdate);
        window.removeEventListener('db-logout', handleDbLogout);
+       autoBackupService.stop();
     }
   }, []);
 

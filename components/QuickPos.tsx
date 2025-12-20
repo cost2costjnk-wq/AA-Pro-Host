@@ -1,8 +1,9 @@
+
 import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Product, TransactionItem, Party } from '../types';
 import { formatCurrency } from '../services/formatService';
-import { Search, Plus, Minus, Trash2, ShoppingBag, FileText, ChevronRight, X, Package, Pencil, ChevronUp, ChevronDown } from 'lucide-react';
+import { Search, Plus, Minus, Trash2, ShoppingBag, FileText, ChevronRight, X, Package, Pencil, ChevronUp, ChevronDown, Tag, Percent, DollarSign } from 'lucide-react';
 import { useToast } from './Toast';
 
 interface QuickPosProps {
@@ -20,6 +21,7 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
   const [cartItems, setCartItems] = useState<TransactionItem[]>([]);
   const [parties, setParties] = useState<Party[]>([]);
   const [selectedPartyId, setSelectedPartyId] = useState(''); 
+  const [pricingMode, setPricingMode] = useState<'retail' | 'wholesale' | 'cost'>('retail');
 
   // Billing Extras State
   const [showDiscount, setShowDiscount] = useState(false);
@@ -53,11 +55,9 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
     const allParties = db.getParties();
     setParties(allParties);
 
-    // Extract unique categories
     const uniqueCats = Array.from(new Set(allProducts.map(p => p.category || 'General')));
     setCategories(['All Categories', ...uniqueCats]);
     
-    // Auto-select "Cash Customer" (ID: 1) if not selected, otherwise fallback to first party
     if (!selectedPartyId && allParties.length > 0) {
         const cashParty = allParties.find(p => p.id === '1');
         setSelectedPartyId(cashParty ? cashParty.id : allParties[0].id);
@@ -67,12 +67,10 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
   useEffect(() => {
     let result = products;
 
-    // Filter by Category
     if (selectedCategory !== 'All Categories') {
       result = result.filter(p => (p.category || 'General') === selectedCategory);
     }
 
-    // Filter by Search (Name OR Category)
     if (searchTerm) {
       const term = searchTerm.toLowerCase();
       result = result.filter(p => 
@@ -84,7 +82,23 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
     setFilteredProducts(result);
   }, [selectedCategory, searchTerm, products]);
 
+  const handlePricingModeChange = (mode: 'retail' | 'wholesale' | 'cost') => {
+      setPricingMode(mode);
+      if (cartItems.length > 0) {
+          const updatedCart = cartItems.map(item => {
+              const product = products.find(p => p.id === item.productId);
+              if (!product) return item;
+              const newRate = mode === 'retail' ? product.salePrice : (mode === 'wholesale' ? (product.wholesalePrice || product.salePrice) : product.purchasePrice);
+              return { ...item, rate: newRate, amount: item.quantity * newRate };
+          });
+          setCartItems(updatedCart);
+          addToast(`Switched to ${mode} prices.`, 'info');
+      }
+  };
+
   const addToCart = (product: Product) => {
+    const rate = pricingMode === 'retail' ? product.salePrice : (pricingMode === 'wholesale' ? (product.wholesalePrice || product.salePrice) : product.purchasePrice);
+
     setCartItems(prev => {
       const existing = prev.find(item => item.productId === product.id);
       if (existing) {
@@ -98,8 +112,8 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
           productId: product.id,
           productName: product.name,
           quantity: 1,
-          rate: product.salePrice,
-          amount: product.salePrice
+          rate: rate,
+          amount: rate
         }];
       }
     });
@@ -128,7 +142,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
 
     const party = parties.find(p => p.id === selectedPartyId);
     
-    // Recalculate finals to be safe
     const subTotal = cartItems.reduce((sum, item) => sum + item.amount, 0);
     const taxAmount = (subTotal - discountAmount) * (taxRate / 100);
     const totalAmount = (subTotal - discountAmount) + taxAmount + extraCharges;
@@ -147,7 +160,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
       totalAmount
     });
 
-    // Reset
     setCartItems([]);
     setDiscountAmount(0);
     setTaxRate(0);
@@ -190,7 +202,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
     }
   };
 
-  // Calculations
   const subTotal = cartItems.reduce((sum, item) => sum + item.amount, 0);
   const taxableAmount = Math.max(0, subTotal - discountAmount);
   const taxAmount = taxableAmount * (taxRate / 100);
@@ -203,7 +214,33 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
       <div className={`flex-1 flex flex-col border-r border-gray-200 overflow-hidden ${mobileCartExpanded ? 'hidden lg:flex' : 'flex'}`}>
         {/* Header */}
         <div className="p-4 border-b border-gray-100 flex items-center justify-between gap-4">
-          <h2 className="text-xl font-bold text-gray-800 shrink-0">Quick POS</h2>
+          <div className="flex items-center gap-4 shrink-0">
+              <h2 className="text-xl font-bold text-gray-800">Quick POS</h2>
+              {/* Pricing Mode Selector */}
+              <div className="flex items-center bg-gray-100 rounded-xl p-1 border border-gray-200 shadow-inner">
+                  <button 
+                      onClick={() => handlePricingModeChange('retail')}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-1 ${pricingMode === 'retail' ? 'bg-white text-brand-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                      title="Retailer Price"
+                  >
+                      <Tag className="w-3 h-3" /> Retail
+                  </button>
+                  <button 
+                      onClick={() => handlePricingModeChange('wholesale')}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-1 ${pricingMode === 'wholesale' ? 'bg-white text-blue-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                      title="Wholesale Price"
+                  >
+                      <Percent className="w-3 h-3" /> Wholesale
+                  </button>
+                  <button 
+                      onClick={() => handlePricingModeChange('cost')}
+                      className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase transition-all flex items-center gap-1 ${pricingMode === 'cost' ? 'bg-white text-orange-600 shadow-sm' : 'text-gray-500 hover:text-gray-700'}`}
+                      title="Cost Price"
+                  >
+                      <DollarSign className="w-3 h-3" /> Cost
+                  </button>
+              </div>
+          </div>
           
           <div className="flex-1 max-w-md relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
@@ -257,9 +294,9 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
         <div className="flex-1 overflow-y-auto p-4 bg-gray-50/50 pb-24 lg:pb-4">
           <div className="grid grid-cols-2 sm:grid-cols-3 xl:grid-cols-4 gap-4">
             {filteredProducts.map(product => {
-               // Get random color for initials background
                const colors = ['bg-emerald-100 text-emerald-600', 'bg-blue-100 text-blue-600', 'bg-purple-100 text-purple-600', 'bg-orange-100 text-orange-600'];
                const colorClass = colors[product.id.charCodeAt(0) % colors.length];
+               const currentRate = pricingMode === 'retail' ? product.salePrice : (pricingMode === 'wholesale' ? (product.wholesalePrice || product.salePrice) : product.purchasePrice);
 
                return (
                 <div key={product.id} className="bg-white p-4 rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow flex flex-col active:scale-95 duration-150 cursor-pointer" onClick={() => addToCart(product)}>
@@ -280,7 +317,7 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
                     <span className="text-xs text-gray-500">
                       {product.type === 'service' ? 'Service' : `Qty: ${product.stock}`}
                     </span>
-                    <span className="font-bold text-gray-900">{formatCurrency(product.salePrice)}</span>
+                    <span className="font-bold text-gray-900">{formatCurrency(currentRate)}</span>
                   </div>
                 </div>
                );
@@ -297,7 +334,7 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
         </div>
       </div>
 
-      {/* Right Side - Cart (Desktop: Fixed Right, Mobile: Bottom Sheet/Overlay) */}
+      {/* Right Side - Cart */}
       <div className={`
         lg:w-96 bg-white flex flex-col shadow-xl z-20 border-l border-gray-100 transition-all duration-300
         lg:relative lg:h-auto
@@ -305,7 +342,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
         ${mobileCartExpanded ? 'top-0 h-full' : 'h-auto max-h-[85vh]'}
       `}>
         
-        {/* Mobile Collapse Toggle (Only visible on Mobile when Expanded) */}
         {mobileCartExpanded && (
            <div className="lg:hidden p-4 border-b border-gray-100 flex items-center justify-between bg-white sticky top-0 z-10">
               <h3 className="font-bold text-gray-800">Current Order</h3>
@@ -315,7 +351,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
            </div>
         )}
 
-        {/* Desktop Header */}
         <div className="hidden lg:flex p-4 border-b border-gray-100 bg-white items-center justify-between">
            <h3 className="font-bold text-gray-800">Billing Items ({cartItems.length})</h3>
            {cartItems.length > 0 && (
@@ -325,11 +360,7 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
            )}
         </div>
 
-        {/* Cart Content - Scrollable Area */}
-        {/* On mobile: If collapsed, this section is hidden or minified */}
         <div className={`flex-1 flex flex-col overflow-hidden ${!mobileCartExpanded ? 'hidden lg:flex' : 'flex'}`}>
-            
-            {/* Customer Select */}
             <div className="px-4 py-3 bg-gray-50 border-b border-gray-100">
             <select 
                     className="w-full p-2 bg-white border border-gray-200 rounded-lg text-sm font-medium focus:ring-2 focus:ring-brand-500 outline-none"
@@ -347,7 +378,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
             </div>
 
             {cartItems.length === 0 ? (
-            // Empty State
             <div className="flex-1 flex flex-col items-center justify-center p-8 text-center bg-white">
                 <div className="w-24 h-24 bg-gray-50 rounded-full flex items-center justify-center mb-6">
                     <FileText className="w-10 h-10 text-gray-300" />
@@ -357,7 +387,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
                 </p>
             </div>
             ) : (
-            // Active Cart Items
             <div className="flex-1 overflow-y-auto p-4 space-y-4">
                 {cartItems.map((item) => (
                 <div key={item.productId} className="flex flex-col pb-4 border-b border-gray-50 last:border-0">
@@ -396,17 +425,13 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
             </div>
             )}
 
-            {/* Footer Section */}
             {cartItems.length > 0 && (
             <div className="p-5 bg-white border-t border-gray-200">
-                
-                {/* Subtotal */}
                 <div className="flex justify-between items-center mb-3 text-gray-600">
                 <span className="text-sm">Sub Total</span>
                 <span className="font-semibold text-gray-900">{formatCurrency(subTotal)}</span>
                 </div>
 
-                {/* Extras Inputs */}
                 <div className="space-y-2 mb-4">
                     {showDiscount && (
                     <div className="flex justify-between items-center text-sm animate-in fade-in slide-in-from-top-1 duration-200">
@@ -454,7 +479,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
                     )}
                 </div>
 
-                {/* Extras Toggles */}
                 <div className="flex flex-wrap gap-3 mb-6 text-xs font-medium text-emerald-600 select-none">
                     <button 
                     onClick={() => setShowDiscount(!showDiscount)} 
@@ -476,7 +500,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
                     </button>
                 </div>
                 
-                {/* Total */}
                 <div className="flex justify-between items-center pt-4 border-t border-dashed border-gray-200 mb-4">
                 <span className="font-bold text-gray-900 text-lg">Total Amount</span>
                 <span className="font-bold text-emerald-600 text-xl">{formatCurrency(totalAmount)}</span>
@@ -493,7 +516,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
             )}
         </div>
 
-        {/* Mobile Summary Bar (Collapsed View) */}
         {!mobileCartExpanded && (
            <div className="lg:hidden p-4 bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)] flex items-center justify-between cursor-pointer" onClick={() => setMobileCartExpanded(true)}>
               <div className="flex flex-col">
@@ -514,7 +536,6 @@ const QuickPos: React.FC<QuickPosProps> = ({ onNavigate }) => {
 
       </div>
 
-       {/* Quick Add Product Modal */}
        {showAddModal && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 backdrop-blur-sm">
           <div className="bg-white rounded-xl w-full max-w-lg p-6 shadow-2xl">

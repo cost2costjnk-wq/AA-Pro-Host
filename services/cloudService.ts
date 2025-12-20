@@ -1,5 +1,4 @@
 
-
 import { db } from './db';
 import { CloudConfig } from '../types';
 
@@ -15,8 +14,12 @@ class CloudService {
     if (typeof google !== 'undefined' && google.accounts) {
       this.tokenClient = google.accounts.oauth2.initTokenClient({
         client_id: config.googleClientId,
-        scope: 'https://www.googleapis.com/auth/drive.file',
+        scope: 'https://www.googleapis.com/auth/drive.file https://www.googleapis.com/auth/drive.readonly',
         callback: (tokenResponse: any) => {
+          if (tokenResponse.error !== undefined) {
+            console.error("Auth error", tokenResponse);
+            return;
+          }
           this.accessToken = tokenResponse.access_token;
           onTokenCallback(tokenResponse);
         },
@@ -26,24 +29,71 @@ class CloudService {
     }
   }
 
+  async ensureToken(): Promise<string | null> {
+    if (this.accessToken) return this.accessToken;
+    
+    return new Promise((resolve) => {
+      const config = db.getCloudConfig();
+      if (!config.googleClientId) return resolve(null);
+
+      this.init(config, (resp) => {
+          resolve(resp.access_token);
+      });
+      this.tokenClient.requestAccessToken({ prompt: 'none' });
+    });
+  }
+
   requestToken() {
     if (this.tokenClient) {
       this.tokenClient.requestAccessToken();
     } else {
-      console.warn("Token client not initialized. Check Client ID.");
+      const config = db.getCloudConfig();
+      if (config.googleClientId) {
+          this.init(config, () => {});
+          this.tokenClient.requestAccessToken();
+      }
     }
   }
 
+  async listBackups(): Promise<{id: string, name: string, modifiedTime: string}[]> {
+    const token = await this.ensureToken();
+    if (!token) throw new Error("Google Drive not configured.");
+
+    const response = await fetch(
+      'https://www.googleapis.com/drive/v3/files?q=name contains "AAPro" and mimeType = "application/json"&fields=files(id, name, modifiedTime)&orderBy=modifiedTime desc',
+      {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+
+    if (!response.ok) throw new Error("Failed to list files from Drive");
+    const data = await response.json();
+    return data.files || [];
+  }
+
+  async downloadFile(fileId: string): Promise<any> {
+    const token = await this.ensureToken();
+    if (!token) throw new Error("Access denied");
+
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+      {
+        headers: { 'Authorization': `Bearer ${token}` }
+      }
+    );
+
+    if (!response.ok) throw new Error("Failed to download backup");
+    return await response.json();
+  }
+
   async uploadBackup(fileName: string, content: string): Promise<{ success: boolean; message: string }> {
-    // 1. Simulation Mode (If no access token or client ID)
     const config = db.getCloudConfig();
-    if (!config.googleClientId || !this.accessToken) {
-      console.log("Simulating Cloud Backup...");
-      await new Promise(resolve => setTimeout(resolve, 2000)); // Fake network delay
-      return { success: true, message: 'Backup simulated successfully (No valid Google Client ID configured).' };
+    const token = await this.ensureToken();
+
+    if (!config.googleClientId || !token) {
+      return { success: false, message: 'Google Drive is not configured.' };
     }
 
-    // 2. Real Upload Logic
     try {
       const metadata = {
         name: fileName,
@@ -57,9 +107,7 @@ class CloudService {
 
       const response = await fetch('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart', {
         method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${this.accessToken}`,
-        },
+        headers: { 'Authorization': `Bearer ${token}` },
         body: form,
       });
 
@@ -68,14 +116,12 @@ class CloudService {
         throw new Error(error.error?.message || 'Upload failed');
       }
 
-      return { success: true, message: 'Backup uploaded to Google Drive successfully.' };
+      return { success: true, message: 'Backup uploaded to Google Drive.' };
     } catch (error: any) {
-      console.error("Drive Upload Error:", error);
       return { success: false, message: `Upload failed: ${error.message}` };
     }
   }
 
-  // Helper to generate full backup JSON string using centralized DB method
   generateBackupData(): string {
     const data = db.getBackupData();
     return JSON.stringify(data, null, 2);
