@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { db } from './db';
 import { formatCurrency } from './formatService';
@@ -107,7 +108,14 @@ const getSystemContext = () => {
 
 export const generateBusinessInsight = async (userQuery: string): Promise<string> => {
   try {
-    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+    // Safety check for process.env to prevent crashes on static environments
+    const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : null;
+    
+    if (!apiKey) {
+      return "AI Assistant is not fully configured for this environment (API Key missing). Please ensure your build environment injects the API_KEY variable.";
+    }
+
+    const ai = new GoogleGenAI({ apiKey });
     const context = getSystemContext();
 
     const response = await ai.models.generateContent({
