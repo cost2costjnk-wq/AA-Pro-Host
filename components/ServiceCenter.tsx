@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/db';
 import { ServiceJob, Party, Product, TransactionItem } from '../types';
@@ -9,7 +10,6 @@ import {
   Wrench, 
   Search, 
   Plus, 
-  Filter, 
   Calendar, 
   User, 
   Smartphone, 
@@ -21,7 +21,6 @@ import {
   Save, 
   ChevronDown,
   AlertCircle,
-  MoreVertical,
   Trash2,
   Edit2,
   Tag
@@ -41,12 +40,10 @@ const ServiceCenter: React.FC = () => {
   const [activeStatus, setActiveStatus] = useState<string>('ALL');
   const [searchTerm, setSearchTerm] = useState('');
   
-  // Modal State
   const [showJobModal, setShowJobModal] = useState(false);
   const [currentJob, setCurrentJob] = useState<Partial<ServiceJob>>({});
   const [isEditMode, setIsEditMode] = useState(false);
   
-  // Print State
   const [printJob, setPrintJob] = useState<ServiceJob | null>(null);
 
   const { addToast } = useToast();
@@ -134,7 +131,6 @@ const ServiceCenter: React.FC = () => {
 
   return (
     <div className="p-4 lg:p-8 max-w-7xl mx-auto h-full flex flex-col">
-      {/* Header */}
       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between mb-6 gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 flex items-center gap-2">
@@ -152,7 +148,6 @@ const ServiceCenter: React.FC = () => {
         </button>
       </div>
 
-      {/* Stats Cards */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
         <div className="bg-white p-4 rounded-xl border border-gray-100 shadow-sm text-center">
            <div className="flex items-center justify-center gap-2 text-yellow-600 text-xs font-bold uppercase mb-1"><Clock className="w-3 h-3"/> Pending</div>
@@ -172,7 +167,6 @@ const ServiceCenter: React.FC = () => {
         </div>
       </div>
 
-      {/* Filters & Toolbar */}
       <div className="flex flex-col sm:flex-row gap-4 mb-4">
          <div className="flex items-center bg-white border border-gray-200 rounded-lg px-3 py-2 flex-1 max-w-md shadow-sm">
             <Search className="w-4 h-4 text-gray-400" />
@@ -201,7 +195,6 @@ const ServiceCenter: React.FC = () => {
          </div>
       </div>
 
-      {/* Jobs Table */}
       <div className="flex-1 bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm flex flex-col">
          <div className="overflow-x-auto flex-1">
             <table className="w-full text-sm text-left">
@@ -243,21 +236,21 @@ const ServiceCenter: React.FC = () => {
                            <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
                               <button 
                                  onClick={() => handleEditJob(job)} 
-                                 className="p-1.5 text-gray-500 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors"
+                                 className="p-1.5 text-gray-400 hover:bg-blue-50 hover:text-blue-600 rounded-lg transition-colors"
                                  title="Edit Job"
                               >
                                  <Edit2 className="w-4 h-4" />
                               </button>
                               <button 
                                  onClick={() => setPrintJob(job)} 
-                                 className="p-1.5 text-gray-500 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors"
+                                 className="p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-900 rounded-lg transition-colors"
                                  title="Print Receipt"
                               >
                                  <Printer className="w-4 h-4" />
                               </button>
                               <button 
                                  onClick={() => handleDeleteJob(job.id)} 
-                                 className="p-1.5 text-gray-500 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
+                                 className="p-1.5 text-gray-400 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors"
                                  title="Delete"
                               >
                                  <Trash2 className="w-4 h-4" />
@@ -278,7 +271,6 @@ const ServiceCenter: React.FC = () => {
          </div>
       </div>
 
-      {/* Modals */}
       {showJobModal && (
          <JobFormModal 
             jobData={currentJob} 
@@ -298,7 +290,6 @@ const ServiceCenter: React.FC = () => {
   );
 };
 
-// --- Internal Component: Job Form Modal ---
 const JobFormModal: React.FC<{
    jobData: Partial<ServiceJob>;
    isEdit: boolean;
@@ -306,323 +297,316 @@ const JobFormModal: React.FC<{
    onSave: (job: ServiceJob) => void;
 }> = ({ jobData, isEdit, onClose, onSave }) => {
    const [formData, setFormData] = useState<Partial<ServiceJob>>(jobData);
+   const [parties, setParties] = useState<Party[]>([]);
    const [products, setProducts] = useState<Product[]>([]);
+   
+   const [nameSearch, setNameSearch] = useState(jobData.customerName || '');
+   const [showNameDropdown, setShowNameDropdown] = useState(false);
    const [partSearch, setPartSearch] = useState('');
    const [showProductDropdown, setShowProductDropdown] = useState(false);
+
+   const nameWrapperRef = useRef<HTMLDivElement>(null);
+   const productWrapperRef = useRef<HTMLDivElement>(null);
    const { addToast } = useToast();
 
    useEffect(() => {
+      setParties(db.getParties());
       setProducts(db.getProducts());
    }, []);
 
-   // Calculations
+   useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+        if (nameWrapperRef.current && !nameWrapperRef.current.contains(event.target as Node)) {
+          setShowNameDropdown(false);
+        }
+        if (productWrapperRef.current && !productWrapperRef.current.contains(event.target as Node)) {
+            setShowProductDropdown(false);
+        }
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+   }, []);
+
    const partsTotal = formData.usedParts?.reduce((sum, p) => sum + p.amount, 0) || 0;
    const labor = Number(formData.laborCharge) || 0;
    const advance = Number(formData.advanceAmount) || 0;
-   const finalTotal = partsTotal + labor;
-   const balanceDue = finalTotal - advance;
+   const totalBill = partsTotal + labor;
+   const balance = totalBill - advance;
 
-   // Handle Part Selection
-   const addPart = (product: Product) => {
-      const currentParts = formData.usedParts || [];
-      const existing = currentParts.find(p => p.productId === product.id);
-      
-      let newParts;
-      if (existing) {
-         newParts = currentParts.map(p => 
-            p.productId === product.id 
-            ? { ...p, quantity: Math.floor(p.quantity + 1), amount: (Math.floor(p.quantity + 1) * p.rate) - (p.discount || 0) } 
-            : p
-         );
-      } else {
-         newParts = [...currentParts, {
-            productId: product.id,
-            productName: product.name,
-            quantity: 1,
-            rate: product.salePrice,
-            discount: 0,
-            amount: product.salePrice,
-            unit: product.unit
-         }];
-      }
-      setFormData({ ...formData, usedParts: newParts });
-      setPartSearch('');
-      setShowProductDropdown(false);
+   const filteredParties = parties.filter(p => p.name.toLowerCase().includes(nameSearch.toLowerCase()));
+   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(partSearch.toLowerCase())).slice(0, 5);
+
+   const handlePartySelect = (p: Party) => {
+       setFormData({
+           ...formData,
+           customerId: p.id,
+           customerName: p.name,
+           customerPhone: p.phone || '',
+           customerAddress: p.address || ''
+       });
+       setNameSearch(p.name);
+       setShowNameDropdown(false);
    };
 
-   const updatePartItem = (index: number, field: keyof TransactionItem, value: any) => {
-       const newParts = [...(formData.usedParts || [])];
-       const item = { ...newParts[index] };
+   const handleManualNameChange = (val: string) => {
+       setNameSearch(val);
+       setFormData({ ...formData, customerName: val, customerId: undefined });
+       setShowNameDropdown(true);
+   };
 
-       // Strictly sanitize quantity as an integer
-       if (field === 'quantity') {
-          value = Math.max(1, parseInt(value) || 1);
-       } else {
-          // @ts-ignore
-          item[field] = value;
-       }
-       
-       // @ts-ignore
-       item[field] = value;
-       
-       // Recalculate amount
-       const qty = Number(item.quantity) || 0;
-       const rate = Number(item.rate) || 0;
-       const discount = Number(item.discount) || 0;
-       item.amount = (qty * rate) - discount;
-       
-       newParts[index] = item;
-       setFormData({ ...formData, usedParts: newParts });
+   const handleAddPart = (p: Product) => {
+       const newItem: TransactionItem = {
+           productId: p.id,
+           productName: p.name,
+           quantity: 1,
+           rate: p.salePrice,
+           amount: p.salePrice
+       };
+       const currentParts = formData.usedParts || [];
+       setFormData({ ...formData, usedParts: [...currentParts, newItem] });
+       setPartSearch('');
+       setShowProductDropdown(false);
    };
 
    const removePart = (idx: number) => {
-      const newParts = [...(formData.usedParts || [])];
-      newParts.splice(idx, 1);
-      setFormData({ ...formData, usedParts: newParts });
+       const newParts = [...(formData.usedParts || [])];
+       newParts.splice(idx, 1);
+       setFormData({ ...formData, usedParts: newParts });
    };
 
-   const handleSave = (e: React.FormEvent) => {
-      e.preventDefault();
-      
-      if (!formData.customerName) {
-          addToast('Please fill Customer Name', 'error');
-          return;
-      }
-
-      const fullJob: ServiceJob = {
-         id: formData.id || Date.now().toString(),
-         ticketNumber: formData.ticketNumber || `JOB-${Date.now()}`,
-         date: formData.date || new Date().toISOString(),
-         customerId: formData.customerId,
-         customerName: formData.customerName,
-         customerPhone: formData.customerPhone || '',
-         customerAddress: formData.customerAddress || '',
-         deviceModel: formData.deviceModel || '',
-         deviceImei: formData.deviceImei || '',
-         devicePassword: formData.devicePassword || '',
-         problemDescription: formData.problemDescription || '',
-         status: (formData.status as any) || 'PENDING',
-         estimatedDelivery: formData.estimatedDelivery,
-         estimatedCost: Number(formData.estimatedCost) || 0,
-         advanceAmount: Number(formData.advanceAmount) || 0,
-         technicianNotes: formData.technicianNotes || '',
-         usedParts: formData.usedParts || [],
-         laborCharge: Number(formData.laborCharge) || 0,
-         finalAmount: finalTotal
-      };
-      onSave(fullJob);
+   const handleSubmit = (e: React.FormEvent) => {
+       e.preventDefault();
+       if (!formData.customerName || !formData.customerPhone) {
+           addToast('Please provide customer name and phone', 'error');
+           return;
+       }
+       const job: ServiceJob = {
+           ...formData,
+           id: formData.id || Date.now().toString(),
+           finalAmount: totalBill
+       } as ServiceJob;
+       onSave(job);
    };
-
-   const filteredProducts = products.filter(p => p.name.toLowerCase().includes(partSearch.toLowerCase())).slice(0, 10);
 
    return (
-      <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-         <div className="bg-white rounded-xl w-full max-w-5xl shadow-2xl flex flex-col max-h-[90vh]">
-            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+      <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-50 flex items-center justify-center p-4 animate-in fade-in duration-200">
+         <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
+            <div className="bg-brand-500 p-6 text-white flex justify-between items-center shrink-0">
                <div>
-                  <h2 className="text-lg font-bold text-gray-900">{isEdit ? 'Update Job Card' : 'Create New Job'}</h2>
-                  <p className="text-xs text-gray-500 font-mono">Ticket: {formData.ticketNumber}</p>
+                  <h2 className="text-xl font-black uppercase tracking-tight flex items-center gap-2">
+                     <Wrench className="w-5 h-5" />
+                     {isEdit ? `Edit Job Sheet: ${formData.ticketNumber}` : 'New Repair Job Sheet'}
+                  </h2>
+                  <p className="text-brand-100 text-xs mt-1">Fill in repair details and customer requirements.</p>
                </div>
-               <button onClick={onClose} className="p-1 hover:bg-gray-200 rounded-full text-gray-500"><X className="w-5 h-5" /></button>
+               <button onClick={onClose} className="p-2 hover:bg-white/20 rounded-full transition-colors"><X className="w-6 h-6" /></button>
             </div>
 
-            <form id="job-form" onSubmit={handleSave} className="flex-1 overflow-y-auto p-6">
-               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
-                  
-                  {/* Left Column: Customer & Device (4 spans) */}
-                  <div className="lg:col-span-4 space-y-4">
-                     <h3 className="font-bold text-gray-800 border-b pb-2 mb-3 flex items-center gap-2"><User className="w-4 h-4" /> Customer Info</h3>
-                     <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-1">Name <span className="text-red-500">*</span></label>
-                        <input required className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-brand-500" value={formData.customerName} onChange={e => setFormData({...formData, customerName: e.target.value})} />
+            <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6 space-y-8 custom-scrollbar">
+               <div className="space-y-4">
+                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                     <User className="w-3 h-3" /> Customer Information
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                     <div className="relative" ref={nameWrapperRef}>
+                        <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Full Name</label>
+                        <input 
+                           required 
+                           className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none font-medium" 
+                           placeholder="Search party or type name..."
+                           value={nameSearch}
+                           onChange={e => handleManualNameChange(e.target.value)}
+                           onFocus={() => setShowNameDropdown(true)}
+                        />
+                        {showNameDropdown && nameSearch && (
+                            <div className="absolute z-30 top-full left-0 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl max-h-48 overflow-y-auto">
+                                {filteredParties.length > 0 ? (
+                                    filteredParties.map((p) => (
+                                        <div 
+                                          key={p.id} 
+                                          className="p-3 border-b last:border-0 hover:bg-brand-50 cursor-pointer flex justify-between items-center"
+                                          onClick={() => handlePartySelect(p)}
+                                        >
+                                            <span className="font-bold text-sm">{p.name}</span>
+                                            <span className="text-[10px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-500 uppercase">Party</span>
+                                        </div>
+                                    ))
+                                ) : (
+                                    <div className="p-3 text-xs text-gray-400 italic">No matching party. Using manual name.</div>
+                                )}
+                            </div>
+                        )}
                      </div>
                      <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-1">Phone</label>
-                        <input className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-brand-500" value={formData.customerPhone} onChange={e => setFormData({...formData, customerPhone: e.target.value})} />
-                     </div>
-                     
-                     <h3 className="font-bold text-gray-800 border-b pb-2 mb-3 mt-6 flex items-center gap-2"><Smartphone className="w-4 h-4" /> Device Details</h3>
-                     <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-1">Model Name</label>
-                        <input className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-brand-500" placeholder="e.g. iPhone 15" value={formData.deviceModel} onChange={e => setFormData({...formData, deviceModel: e.target.value})} />
-                     </div>
-                     <div className="grid grid-cols-2 gap-3">
-                        <div>
-                           <label className="block text-xs font-semibold text-gray-500 mb-1">IMEI / Serial</label>
-                           <input className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-brand-500" value={formData.deviceImei} onChange={e => setFormData({...formData, deviceImei: e.target.value})} />
-                        </div>
-                        <div>
-                           <label className="block text-xs font-semibold text-gray-500 mb-1">Password</label>
-                           <input className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-brand-500" placeholder="e.g. 1234" value={formData.devicePassword} onChange={e => setFormData({...formData, devicePassword: e.target.value})} />
-                        </div>
-                     </div>
-
-                     <div className="pt-4">
-                        <label className="block text-xs font-semibold text-gray-500 mb-1">Problem Description</label>
-                        <textarea className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 min-h-[60px]" value={formData.problemDescription} onChange={e => setFormData({...formData, problemDescription: e.target.value})} />
-                     </div>
-                     
-                     <div className="grid grid-cols-2 gap-3">
-                        <div>
-                           <label className="block text-xs font-semibold text-gray-500 mb-1">Intake Date</label>
-                           <NepaliDatePicker value={formData.date || ''} onChange={d => setFormData({...formData, date: d})} />
-                        </div>
-                        <div>
-                           <label className="block text-xs font-semibold text-gray-500 mb-1">Est. Delivery</label>
-                           <NepaliDatePicker value={formData.estimatedDelivery || ''} onChange={d => setFormData({...formData, estimatedDelivery: d})} />
-                        </div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Contact Phone</label>
+                        <input 
+                           required 
+                           className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none" 
+                           placeholder="Primary mobile number"
+                           value={formData.customerPhone}
+                           onChange={e => setFormData({...formData, customerPhone: e.target.value})}
+                        />
                      </div>
                      <div>
-                        <label className="block text-xs font-semibold text-gray-500 mb-1">Current Status</label>
+                        <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Status</label>
                         <select 
-                           className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 bg-white"
+                           className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none bg-white font-bold"
                            value={formData.status}
                            onChange={e => setFormData({...formData, status: e.target.value as any})}
                         >
-                           <option value="PENDING">Pending</option>
-                           <option value="IN_PROGRESS">In Progress</option>
-                           <option value="COMPLETED">Completed</option>
-                           <option value="DELIVERED">Delivered</option>
-                           <option value="CANCELLED">Cancelled</option>
+                           <option value="PENDING">PENDING</option>
+                           <option value="IN_PROGRESS">IN PROGRESS</option>
+                           <option value="COMPLETED">COMPLETED</option>
+                           <option value="DELIVERED">DELIVERED</option>
+                           <option value="CANCELLED">CANCELLED</option>
                         </select>
                      </div>
                   </div>
+               </div>
 
-                  {/* Right Column: Billing & Spare Parts (8 spans) */}
-                  <div className="lg:col-span-8 flex flex-col">
-                     <div className="bg-gray-50 p-5 rounded-xl border border-gray-200 flex flex-col h-full">
-                        <h3 className="font-bold text-gray-800 border-b pb-2 mb-4 flex justify-between items-center">
-                            <span className="flex items-center gap-2"><Tag className="w-4 h-4" /> Spare Parts & Billing</span>
-                            <span className="text-xs text-brand-600">Total Parts: {formatCurrency(partsTotal)}</span>
-                        </h3>
-                        
-                        {/* Parts Search */}
-                        <div className="relative mb-4">
-                           <div className="relative">
-                              <input 
-                                 className="w-full border border-gray-300 rounded-lg p-2.5 pl-9 text-sm outline-none focus:ring-2 focus:ring-brand-500"
-                                 placeholder="Search products to add as spare parts..."
-                                 value={partSearch}
-                                 onChange={e => { setPartSearch(e.target.value); setShowProductDropdown(true); }}
-                                 onFocus={() => setShowProductDropdown(true)}
-                              />
-                              <Search className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
-                           </div>
-                           {showProductDropdown && partSearch && (
-                              <div className="absolute top-full left-0 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-20 mt-1 max-h-60 overflow-y-auto">
-                                 {filteredProducts.map(p => (
-                                    <div key={p.id} className="p-3 text-sm hover:bg-gray-50 cursor-pointer flex justify-between items-center border-b last:border-0" onClick={() => addPart(p)}>
-                                       <div>
-                                          <div className="font-bold text-gray-800">{p.name}</div>
-                                          <div className="text-[10px] text-gray-500">Stock: {p.stock} {p.unit}</div>
-                                       </div>
-                                       <span className="font-bold text-brand-600">{formatCurrency(p.salePrice)}</span>
-                                    </div>
-                                 ))}
-                                 {filteredProducts.length === 0 && (
-                                     <div className="p-3 text-center text-gray-400 text-xs italic">No items found</div>
-                                 )}
+               <div className="space-y-4">
+                  <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                     <Smartphone className="w-3 h-3" /> Device & Problem Details
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                     <div className="space-y-4">
+                        <div>
+                           <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Device Model / Serial</label>
+                           <input 
+                              required 
+                              className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none" 
+                              placeholder="e.g. iPhone 15 Pro Max"
+                              value={formData.deviceModel}
+                              onChange={e => setFormData({...formData, deviceModel: e.target.value})}
+                           />
+                        </div>
+                        <div>
+                           <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Pattern / Password</label>
+                           <input 
+                              className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none" 
+                              placeholder="If required for testing"
+                              value={formData.devicePassword}
+                              onChange={e => setFormData({...formData, devicePassword: e.target.value})}
+                           />
+                        </div>
+                     </div>
+                     <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Problem Description</label>
+                        <textarea 
+                           required 
+                           className="w-full border border-gray-200 rounded-xl p-3 text-sm focus:ring-2 focus:ring-brand-500 outline-none h-[124px] resize-none" 
+                           placeholder="Describe the issues reported by customer..."
+                           value={formData.problemDescription}
+                           onChange={e => setFormData({...formData, problemDescription: e.target.value})}
+                        />
+                     </div>
+                  </div>
+               </div>
+
+               <div className="grid grid-cols-1 lg:grid-cols-2 gap-10">
+                  <div className="space-y-4">
+                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                        <Wrench className="w-3 h-3" /> Parts & Labor
+                     </h3>
+                     <div className="bg-gray-50 rounded-2xl border border-gray-100 p-4 min-h-[200px] flex flex-col">
+                        <div className="relative mb-3" ref={productWrapperRef}>
+                            <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" />
+                            <input 
+                                type="text"
+                                className="w-full pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-xs focus:ring-2 focus:ring-brand-500 outline-none"
+                                placeholder="Add parts from inventory..."
+                                value={partSearch}
+                                onChange={e => {setPartSearch(e.target.value); setShowProductDropdown(true);}}
+                                onFocus={() => setShowProductDropdown(true)}
+                            />
+                            {showProductDropdown && partSearch && (
+                                <div className="absolute z-20 top-full left-0 w-full mt-1 bg-white border border-gray-200 rounded-xl shadow-xl">
+                                    {filteredProducts.map(p => (
+                                        <div key={p.id} className="p-2 border-b last:border-0 hover:bg-gray-50 cursor-pointer text-xs flex justify-between" onClick={() => handleAddPart(p)}>
+                                            <span>{p.name}</span>
+                                            <span className="font-bold text-brand-600">{formatCurrency(p.salePrice)}</span>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+
+                        <div className="flex-1 space-y-2">
+                           {formData.usedParts?.map((part, idx) => (
+                              <div key={idx} className="flex items-center justify-between bg-white p-2 rounded-lg border border-gray-100 shadow-sm">
+                                 <div className="flex flex-col">
+                                    <span className="text-xs font-bold text-gray-700">{part.productName}</span>
+                                    <span className="text-[10px] text-gray-400">Qty: {part.quantity} @ {formatCurrency(part.rate)}</span>
+                                 </div>
+                                 <div className="flex items-center gap-3">
+                                    <span className="text-xs font-bold">{formatCurrency(part.amount)}</span>
+                                    <button type="button" onClick={() => removePart(idx)} className="text-gray-300 hover:text-red-500"><X className="w-3.5 h-3.5" /></button>
+                                 </div>
+                              </div>
+                           ))}
+                           {!formData.usedParts?.length && (
+                              <div className="h-full flex flex-col items-center justify-center text-gray-400 py-10 opacity-50">
+                                 <AlertCircle className="w-8 h-8 mb-2" />
+                                 <p className="text-xs font-medium">No parts added yet</p>
                               </div>
                            )}
                         </div>
 
-                        {/* Used Parts Table */}
-                        <div className="bg-white border border-gray-200 rounded-lg flex-1 overflow-hidden flex flex-col min-h-[250px]">
-                           <div className="grid grid-cols-[1fr_60px_60px_100px_80px_100px_40px] gap-2 bg-gray-100 px-3 py-2 text-[10px] font-bold text-gray-500 uppercase">
-                              <div>Part Name</div>
-                              <div className="text-center">Qty</div>
-                              <div>Unit</div>
-                              <div className="text-right">Rate</div>
-                              <div className="text-right">Dis.</div>
-                              <div className="text-right">Amount</div>
-                              <div></div>
+                        <div className="mt-4 pt-3 border-t border-dashed border-gray-200 flex justify-between items-center">
+                           <span className="text-[10px] font-black text-gray-400 uppercase">Parts Subtotal</span>
+                           <span className="font-bold text-gray-900">{formatCurrency(partsTotal)}</span>
+                        </div>
+                     </div>
+
+                     <div>
+                        <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase">Service / Labor Charge</label>
+                        <input 
+                           type="number"
+                           className="w-full border border-gray-200 rounded-xl p-3 text-lg font-black text-brand-600 focus:ring-2 focus:ring-brand-500 outline-none" 
+                           placeholder="0.00"
+                           value={formData.laborCharge}
+                           onChange={e => setFormData({...formData, laborCharge: Number(e.target.value)})}
+                        />
+                     </div>
+                  </div>
+
+                  <div className="space-y-4">
+                     <h3 className="text-[10px] font-black text-gray-400 uppercase tracking-[0.2em] flex items-center gap-2">
+                        <Tag className="w-3 h-3" /> Financial Summary
+                     </h3>
+                     <div className="bg-gray-900 rounded-3xl p-6 text-white space-y-6 shadow-xl">
+                        <div className="space-y-3">
+                           <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-400">Total Bill Amount</span>
+                              <span className="font-bold">{formatCurrency(totalBill)}</span>
                            </div>
-                           <div className="flex-1 overflow-y-auto p-2 space-y-1">
-                              {formData.usedParts?.length === 0 && <div className="text-sm text-center text-gray-400 py-10">No spare parts added yet.</div>}
-                              {formData.usedParts?.map((part, idx) => (
-                                 <div key={idx} className="grid grid-cols-[1fr_60px_60px_100px_80px_100px_40px] gap-2 items-center text-xs bg-white border border-transparent hover:border-gray-200 p-1.5 rounded transition-all">
-                                    <div className="font-medium text-gray-800 truncate" title={part.productName}>{part.productName}</div>
-                                    <div>
-                                       <input 
-                                          type="number" 
-                                          min="1" 
-                                          step="1"
-                                          className="w-full border rounded p-1 text-center" 
-                                          value={part.quantity} 
-                                          onChange={e => updatePartItem(idx, 'quantity', e.target.value)} 
-                                       />
-                                    </div>
-                                    <div>
-                                       <input 
-                                          className="w-full border rounded p-1 text-center uppercase text-[10px]" 
-                                          value={part.unit} 
-                                          onChange={e => updatePartItem(idx, 'unit', e.target.value)} 
-                                       />
-                                    </div>
-                                    <div>
-                                       <input 
-                                          type="number" 
-                                          className="w-full border rounded p-1 text-right" 
-                                          value={part.rate} 
-                                          onChange={e => updatePartItem(idx, 'rate', Number(e.target.value))} 
-                                       />
-                                    </div>
-                                    <div>
-                                       <input 
-                                          type="number" 
-                                          className="w-full border rounded p-1 text-right" 
-                                          value={part.discount || 0} 
-                                          onChange={e => updatePartItem(idx, 'discount', Number(e.target.value))} 
-                                       />
-                                    </div>
-                                    <div className="text-right font-bold text-gray-700">
-                                       {formatCurrency(part.amount)}
-                                    </div>
-                                    <div className="text-center">
-                                       <button type="button" onClick={() => removePart(idx)} className="text-red-400 hover:text-red-600 p-1"><Trash2 className="w-3.5 h-3.5" /></button>
-                                    </div>
-                                 </div>
-                              ))}
+                           <div className="flex justify-between items-center text-sm">
+                              <span className="text-gray-400">Advance Received</span>
+                              <div className="flex items-center gap-2">
+                                 <span className="text-red-400 font-bold">-</span>
+                                 <input 
+                                    type="number"
+                                    className="w-24 bg-gray-800 border-none rounded-lg p-1 text-right text-sm font-bold text-white focus:ring-1 focus:ring-brand-500 outline-none"
+                                    value={formData.advanceAmount}
+                                    onChange={e => setFormData({...formData, advanceAmount: Number(e.target.value)})}
+                                 />
+                              </div>
+                           </div>
+                           <div className="pt-3 border-t border-gray-800 flex justify-between items-center">
+                              <span className="text-xs font-black uppercase text-brand-400">Total Net Balance</span>
+                              <span className="text-3xl font-black">{formatCurrency(balance)}</span>
                            </div>
                         </div>
 
-                        {/* Totals Section */}
-                        <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 border-t border-gray-200">
-                           <div className="space-y-2">
-                                <label className="block text-xs font-semibold text-gray-500 mb-1">Internal Technician Notes</label>
-                                <textarea className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-brand-500 min-h-[80px]" placeholder="Add repair status updates..." value={formData.technicianNotes} onChange={e => setFormData({...formData, technicianNotes: e.target.value})} />
-                           </div>
-                           <div className="space-y-2 bg-white p-4 rounded-xl border border-gray-200 shadow-sm">
-                              <div className="flex justify-between items-center text-sm">
-                                 <span className="text-gray-500">Subtotal Parts:</span>
-                                 <span className="font-medium text-gray-900">{formatCurrency(partsTotal)}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm">
-                                 <span className="text-gray-500">Labor Charge:</span>
-                                 <div className="relative">
-                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-gray-400 text-[10px]">Rs.</span>
-                                    <input type="number" className="w-24 border border-gray-300 rounded p-1.5 pl-7 text-right text-sm focus:ring-1 focus:ring-brand-500 outline-none font-bold" value={formData.laborCharge} onChange={e => setFormData({...formData, laborCharge: Number(e.target.value)})} />
-                                 </div>
-                              </div>
-                              <div className="flex justify-between items-center text-sm pt-2 border-t border-dashed">
-                                 <span className="text-gray-500">Service Estimate:</span>
-                                 <input type="number" className="w-24 border border-gray-300 rounded p-1 text-right text-sm" value={formData.estimatedCost} onChange={e => setFormData({...formData, estimatedCost: Number(e.target.value)})} />
-                              </div>
-                              <div className="flex justify-between items-center pt-2 border-t border-gray-200">
-                                 <span className="font-bold text-gray-800">Grand Total:</span>
-                                 <span className="font-bold text-gray-900 text-lg">{formatCurrency(finalTotal)}</span>
-                              </div>
-                              <div className="flex justify-between items-center text-sm text-red-600 font-medium">
-                                 <span>Advance Paid:</span>
-                                 <div className="relative">
-                                    <span className="absolute left-2 top-1/2 -translate-y-1/2 text-red-300 text-[10px]">Rs.</span>
-                                    <input type="number" className="w-24 border border-red-200 bg-red-50/30 rounded p-1.5 pl-7 text-right text-sm focus:ring-1 focus:ring-red-400 outline-none" value={formData.advanceAmount} onChange={e => setFormData({...formData, advanceAmount: Number(e.target.value)})} />
-                                 </div>
-                              </div>
-                              <div className="flex justify-between items-center text-base border-t-2 border-brand-500 pt-2 mt-2 bg-brand-50 p-2 rounded">
-                                 <span className="font-bold text-brand-900">Balance Payable:</span>
-                                 <span className="font-black text-brand-700 text-xl">{formatCurrency(balanceDue)}</span>
-                              </div>
+                        <div className="space-y-3 pt-4 border-t border-gray-800">
+                           <div>
+                              <label className="block text-[10px] font-bold text-gray-500 uppercase mb-1.5">Estimated Cost (Display)</label>
+                              <input 
+                                 type="number"
+                                 className="w-full bg-gray-800 border-none rounded-xl p-2 text-sm font-bold text-white outline-none"
+                                 value={formData.estimatedCost}
+                                 onChange={e => setFormData({...formData, estimatedCost: Number(e.target.value)})}
+                              />
                            </div>
                         </div>
                      </div>
@@ -630,115 +614,85 @@ const JobFormModal: React.FC<{
                </div>
             </form>
 
-            <div className="p-4 border-t border-gray-100 flex justify-between bg-gray-50 rounded-b-xl">
-               <div className="text-[10px] text-gray-400 self-center italic">
-                  * Parts stock will be updated if status is set to Delivered or Completed.
-               </div>
-               <div className="flex gap-3">
-                  <button type="button" onClick={onClose} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors">Cancel</button>
-                  <button 
-                    type="submit"
-                    form="job-form"
-                    className="px-8 py-2.5 bg-brand-500 text-white font-bold rounded-lg hover:bg-brand-600 transition-colors shadow-lg shadow-brand-500/20 flex items-center gap-2"
-                  >
-                     <Save className="w-4 h-4" /> {isEdit ? 'Update Record' : 'Save Job Card'}
-                  </button>
-               </div>
+            <div className="p-6 border-t bg-gray-50 flex justify-end gap-3 shrink-0">
+               <button type="button" onClick={onClose} className="px-6 py-3 text-gray-500 font-bold text-sm hover:bg-gray-100 rounded-2xl transition-all">Discard</button>
+               <button onClick={handleSubmit} className="px-10 py-3 bg-brand-500 text-white rounded-2xl font-black uppercase tracking-widest text-xs shadow-lg shadow-brand-500/20 hover:bg-brand-600 active:scale-95 transition-all flex items-center gap-2">
+                  <Save className="w-4 h-4" /> 
+                  {isEdit ? 'Update Job Sheet' : 'Save Job Sheet'}
+               </button>
             </div>
          </div>
       </div>
    );
 };
 
-// --- Internal Component: Print Layout ---
 const PrintJobReceipt: React.FC<{ job: ServiceJob; onClose: () => void }> = ({ job, onClose }) => {
-   const profile = db.getBusinessProfile();
-   
-   // Auto print effect
-   useEffect(() => {
-      // setTimeout(() => window.print(), 500);
-   }, []);
+    const profile = db.getBusinessProfile();
 
-   const JobCard = ({ title }: { title: string }) => (
-      <div className="border border-gray-800 p-6 mb-8 bg-white text-black min-h-[400px]">
-         <div className="flex justify-between border-b-2 border-gray-800 pb-4 mb-4">
-            <div>
-               <h1 className="text-2xl font-bold uppercase">{profile.name}</h1>
-               <p className="text-sm">{profile.address}</p>
-               <p className="text-sm">{profile.phone}</p>
-            </div>
-            <div className="text-right">
-               <h2 className="text-xl font-bold uppercase">{title}</h2>
-               <p className="font-mono text-lg font-bold">{job.ticketNumber}</p>
-               <p className="text-sm">Date: {formatNepaliDate(job.date)}</p>
-            </div>
-         </div>
+    useEffect(() => {
+        setTimeout(() => {
+            window.print();
+            onClose();
+        }, 800);
+    }, []);
 
-         <div className="grid grid-cols-2 gap-8 mb-6">
-            <div>
-               <h3 className="font-bold border-b border-gray-400 mb-2 uppercase text-sm">Customer Details</h3>
-               <p><span className="font-semibold">Name:</span> {job.customerName}</p>
-               <p><span className="font-semibold">Phone:</span> {job.customerPhone}</p>
-            </div>
-            <div>
-               <h3 className="font-bold border-b border-gray-400 mb-2 uppercase text-sm">Device Details</h3>
-               <p><span className="font-semibold">Model:</span> {job.deviceModel || 'N/A'}</p>
-               <p><span className="font-semibold">IMEI:</span> {job.deviceImei || 'N/A'}</p>
-               <p><span className="font-semibold">Password:</span> {job.devicePassword || 'N/A'}</p>
-            </div>
-         </div>
-
-         <div className="mb-6 border-b border-gray-200 pb-4">
-            <h3 className="font-bold border-b border-gray-400 mb-2 uppercase text-sm">Problem / Issue</h3>
-            <p className="italic mb-4">{job.problemDescription}</p>
+    return (
+        <div className="fixed inset-0 z-[200] bg-white print:static">
+            <style dangerouslySetInnerHTML={{ __html: `
+                @media print {
+                    @page { size: 80mm auto; margin: 0; }
+                    body * { visibility: hidden; }
+                    .print-receipt-target, .print-receipt-target * { visibility: visible; }
+                    .print-receipt-target {
+                        position: absolute;
+                        left: 0;
+                        top: 0;
+                        width: 80mm;
+                        padding: 5mm;
+                        margin: 0;
+                        background: white;
+                    }
+                }
+            `}} />
             
-            {/* Technician Notes Section */}
-            <div className="mt-4">
-                <h3 className="font-bold border-b border-gray-400 mb-2 uppercase text-sm">Technician Notes</h3>
-                <p className="italic min-h-[40px] font-mono text-sm">{job.technicianNotes || '_________________________________________________'}</p>
-            </div>
-         </div>
+            <div className="print-receipt-target w-[80mm] mx-auto p-4 text-center font-sans text-[11px] leading-tight">
+                <h1 className="text-sm font-black uppercase mb-1">{profile.name}</h1>
+                <p className="mb-2">{profile.address}<br/>Ph: {profile.phone}</p>
+                
+                <div className="border-y border-dashed border-gray-400 py-2 my-2 text-left">
+                    <div className="flex justify-between font-bold mb-1">
+                        <span>TICKET: #{job.ticketNumber}</span>
+                        <span>{formatNepaliDate(job.date)}</span>
+                    </div>
+                    <div className="mt-1">
+                        <p className="font-bold">Customer: {job.customerName}</p>
+                        <p>Phone: {job.customerPhone}</p>
+                    </div>
+                </div>
 
-         <div className="grid grid-cols-2 gap-8 mt-auto pt-4">
-            <div className="text-sm">
-               <p className="font-bold">Terms & Conditions:</p>
-               <ul className="list-disc pl-4 text-xs">
-                  <li>Goods once sold or repaired are not returnable.</li>
-                  <li>We are not responsible for data loss during repair.</li>
-                  <li>Device must be collected within 30 days.</li>
-               </ul>
-            </div>
-            <div className="text-right space-y-1">
-               <p><span className="font-semibold">Est. Cost:</span> {formatCurrency(job.estimatedCost)}</p>
-               <p><span className="font-semibold">Advance:</span> {formatCurrency(job.advanceAmount)}</p>
-               <div className="mt-8 pt-4 border-t border-gray-800 inline-block w-32 text-center text-xs">
-                  Authorized Signature
-               </div>
-            </div>
-         </div>
-      </div>
-   );
+                <div className="text-left my-3 space-y-1">
+                    <p className="font-bold">Device: {job.deviceModel}</p>
+                    <p className="text-[10px] text-gray-600">Problem: {job.problemDescription}</p>
+                </div>
 
-   return (
-      <div className="fixed inset-0 z-[100] bg-gray-900/80 flex items-center justify-center p-4">
-         <div className="absolute top-4 right-4 flex gap-2 print:hidden">
-            <button onClick={() => window.print()} className="bg-blue-600 text-white p-2 rounded-full shadow hover:bg-blue-700">
-               <Printer className="w-6 h-6" />
-            </button>
-            <button onClick={onClose} className="bg-gray-600 text-white p-2 rounded-full shadow hover:bg-gray-700">
-               <X className="w-6 h-6" />
-            </button>
-         </div>
+                <div className="border-t border-dashed border-gray-400 pt-2 space-y-1 text-left">
+                    <div className="flex justify-between"><span>Parts Subtotal:</span><span>{formatCurrency(job.usedParts?.reduce((s,p)=>s+p.amount,0)||0)}</span></div>
+                    <div className="flex justify-between"><span>Labor/Service:</span><span>{formatCurrency(job.laborCharge)}</span></div>
+                    <div className="flex justify-between font-bold border-t border-gray-200 pt-1 mt-1"><span>BILL TOTAL:</span><span>{formatCurrency(job.finalAmount)}</span></div>
+                    <div className="flex justify-between text-gray-600"><span>ADVANCE PAID:</span><span>-{formatCurrency(job.advanceAmount)}</span></div>
+                    <div className="flex justify-between font-black text-sm pt-1 border-t-2 border-gray-900 mt-1"><span>BALANCE:</span><span>{formatCurrency(job.finalAmount - job.advanceAmount)}</span></div>
+                </div>
 
-         <div className="bg-white w-[210mm] min-h-[297mm] p-8 overflow-y-auto print:p-0 print:w-full print:h-full print:absolute print:inset-0">
-            <JobCard title="Job Sheet (Customer Copy)" />
-            <div className="border-t-2 border-dashed border-gray-400 my-8 relative">
-               <span className="absolute left-1/2 -top-3 bg-white px-2 text-xs text-gray-500 -translate-x-1/2">Cut Here</span>
+                <div className="mt-6 pt-6 border-t border-gray-200 text-[9px] text-gray-400 italic">
+                    <p>PLEASE BRING THIS TICKET FOR PICKUP</p>
+                    <div className="mt-6 flex justify-between">
+                        <span className="border-t border-gray-300 w-16"></span>
+                        <span className="font-bold uppercase text-gray-600">Authorized</span>
+                    </div>
+                </div>
             </div>
-            <JobCard title="Job Sheet (Shop Copy)" />
-         </div>
-      </div>
-   );
+        </div>
+    );
 };
 
 export default ServiceCenter;

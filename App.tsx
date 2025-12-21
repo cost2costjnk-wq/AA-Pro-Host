@@ -39,6 +39,7 @@ const App: React.FC = () => {
   const [overlayEditingTransaction, setOverlayEditingTransaction] = useState<Transaction | null>(null);
   
   const [refreshKey, setRefreshKey] = useState(0);
+  const [detectedBackup, setDetectedBackup] = useState<any | null>(null);
 
   const { addToast } = useToast();
 
@@ -65,13 +66,16 @@ const App: React.FC = () => {
 
     const handleUpdate = () => setRefreshKey(prev => prev + 1);
     const handleLogout = () => { setCompanySelected(false); autoBackupService.stop(); };
+    const handleBackupDetected = (e: any) => setDetectedBackup(e.detail);
     
     window.addEventListener('db-updated', handleUpdate);
     window.addEventListener('db-logout', handleLogout);
+    window.addEventListener('new-backup-detected', handleBackupDetected);
     
     return () => {
        window.removeEventListener('db-updated', handleUpdate);
        window.removeEventListener('db-logout', handleLogout);
+       window.removeEventListener('new-backup-detected', handleBackupDetected);
        autoBackupService.stop();
     }
   }, []);
@@ -113,6 +117,24 @@ const App: React.FC = () => {
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
   }, []);
+
+  const handlePerformSync = async () => {
+    if (!detectedBackup) return;
+    const confirmRestore = window.confirm(`Update Local System?\nA newer backup was found: ${detectedBackup.name}\n\nThis will update your local data to the state from ${detectedBackup.date}. Continue?`);
+    
+    if (confirmRestore) {
+        const result = await db.restoreData(detectedBackup.data);
+        if (result.success) {
+            addToast('System successfully synchronized with latest backup!', 'success');
+            setDetectedBackup(null);
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            addToast('Synchronization failed.', 'error');
+        }
+    } else {
+        setDetectedBackup(null);
+    }
+  };
 
   const handleEdit = (t: Transaction) => { 
     if (['PAYMENT_IN', 'PAYMENT_OUT', 'EXPENSE'].includes(t.type)) {
@@ -213,6 +235,47 @@ const App: React.FC = () => {
             <AIAssistant />
         </div>
       </div>
+
+      {/* Auto-Restore Background Sync Prompt */}
+      {detectedBackup && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-md px-4 animate-in slide-in-from-bottom-10 duration-500 print:hidden">
+            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border-2 border-brand-500 p-5 flex flex-col gap-4 overflow-hidden relative">
+                <div className="absolute top-0 right-0 p-1">
+                    <button onClick={() => setDetectedBackup(null)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
+                        <X className="w-4 h-4" />
+                    </button>
+                </div>
+                
+                <div className="flex items-start gap-4">
+                    <div className="w-12 h-12 rounded-xl bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 dark:text-brand-400 shrink-0">
+                        <RefreshCw className="w-6 h-6 animate-spin-slow" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                        <h4 className="font-black text-gray-900 dark:text-white text-sm uppercase tracking-tight">Newer Backup Found!</h4>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                            A newer version of your data from <b>{detectedBackup.date}</b> is available in your local folder.
+                        </p>
+                    </div>
+                </div>
+
+                <div className="flex gap-2">
+                    <button 
+                        onClick={() => setDetectedBackup(null)}
+                        className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
+                    >
+                        Ignore
+                    </button>
+                    <button 
+                        onClick={handlePerformSync}
+                        className="flex-2 flex items-center justify-center gap-2 py-2.5 px-6 rounded-xl bg-brand-500 text-white text-xs font-bold shadow-lg shadow-brand-500/20 hover:bg-brand-600 transition-all active:scale-95"
+                    >
+                        <RefreshCw className="w-3.5 h-3.5" />
+                        Sync & Restore Now
+                    </button>
+                </div>
+            </div>
+        </div>
+      )}
 
       {showPos && <PosForm type={showPos} initialData={editingTransaction} onClose={() => setShowPos(null)} onSave={() => { setShowPos(null); setRefreshKey(prev => prev + 1); }} />}
 
