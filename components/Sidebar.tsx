@@ -1,4 +1,3 @@
-
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -18,9 +17,13 @@ import {
   Wrench,
   Zap,
   ClipboardCheck,
-  Banknote
+  Banknote,
+  Keyboard,
+  RotateCcw,
+  ShieldCheck
 } from 'lucide-react';
 import { NavItem } from '../types';
+import { authService } from '../services/authService';
 
 interface SidebarProps {
   isOpen: boolean;
@@ -30,8 +33,9 @@ interface SidebarProps {
 }
 
 const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeTab, setActiveTab, onClose }) => {
-  // Set expandedMenus to an empty array so sections like Sales and Purchase are folded by default
   const [expandedMenus, setExpandedMenus] = useState<string[]>([]);
+  const isSuper = authService.isSuperAdmin();
+  const userRole = authService.getUserRole();
 
   const toggleMenu = (id: string) => {
     setExpandedMenus(prev => 
@@ -51,6 +55,7 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeTab, setActiveTab, onCl
     { id: 'parties', label: 'Parties', icon: Users },
     { id: 'inventory', label: 'Inventory', icon: Package },
     { id: 'service-center', label: 'Service Center', icon: Wrench },
+    { id: 'warranty-return', label: 'Warranty Return', icon: RotateCcw },
     { id: 'pricelist', label: 'Price List', icon: ClipboardList },
     { 
       id: 'sales', 
@@ -79,20 +84,35 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeTab, setActiveTab, onCl
     { id: 'expense', label: 'Expense', icon: Receipt },
     { id: 'manage-accounts', label: 'Manage Accounts', icon: Building2 },
     { id: 'reports', label: 'Reports', icon: FileBarChart },
+    { id: 'shortcut-keys', label: 'Keyboard Shortcuts', icon: Keyboard },
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
+
+  // Filter items based on permissions
+  const filteredMenuItems = menuItems.filter(item => {
+    if (isSuper || userRole === 'ADMIN') return true;
+    if (item.subItems) {
+      // If it has sub-items, check if at least one sub-item is allowed
+      return item.subItems.some(sub => authService.hasPermission(sub.id));
+    }
+    return authService.hasPermission(item.id);
+  });
+
+  if (isSuper) {
+    filteredMenuItems.push({ id: 'admin-dashboard', label: 'Admin Dashboard', icon: ShieldCheck });
+  }
 
   return (
     <>
       {isOpen && (
         <div 
           className="fixed inset-0 bg-black/50 z-40 lg:hidden backdrop-blur-sm transition-opacity"
-          onClick={onClose}
+          onMouseEnter={onClose}
         />
       )}
 
       <aside 
-        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:static lg:inset-0 ${isOpen ? 'translate-x-0' : '-translate-x-full'} overflow-y-auto flex flex-col`}
+        className={`fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 transform transition-transform duration-300 ease-in-out lg:translate-x-0 lg:sticky lg:top-0 lg:h-screen ${isOpen ? 'translate-x-0' : '-translate-x-full'} flex flex-col shadow-2xl lg:shadow-none`}
       >
         <div className="flex items-center justify-between h-16 px-6 border-b border-gray-100 dark:border-gray-700 shrink-0">
           <div className="flex items-center gap-2 text-brand-600 dark:text-brand-500">
@@ -107,16 +127,15 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeTab, setActiveTab, onCl
           </button>
         </div>
 
-        <div className="p-4 flex-1">
+        <div className="flex-1 overflow-y-auto p-4 custom-scrollbar">
           <div className="mb-2 text-xs font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider px-3">
             Menu
           </div>
 
           <nav className="space-y-1">
-            {menuItems.map((item) => {
+            {filteredMenuItems.map((item) => {
               const Icon = item.icon;
               const isExpanded = expandedMenus.includes(item.id);
-              const isActiveParent = activeTab === item.id || item.subItems?.some(sub => sub.id === activeTab);
               const isExactActive = activeTab === item.id;
 
               return (
@@ -132,11 +151,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeTab, setActiveTab, onCl
                     className={`w-full flex items-center justify-between px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                       isExactActive 
                         ? 'bg-brand-500 text-white shadow-md shadow-brand-500/20' 
-                        : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white'
+                        : (item.id === 'admin-dashboard' 
+                           ? 'bg-brand-900 text-brand-100 hover:bg-brand-800' 
+                           : 'text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 hover:text-gray-900 dark:hover:text-white')
                     }`}
                   >
                     <div className="flex items-center gap-3">
-                      <Icon className={`w-5 h-5 ${isExactActive ? 'text-white' : 'text-gray-400 dark:text-gray-500'}`} />
+                      <Icon className={`w-5 h-5 ${isExactActive ? 'text-white' : (item.id === 'admin-dashboard' ? 'text-brand-400' : 'text-gray-400 dark:text-gray-500')}`} />
                       {item.label}
                     </div>
                     {item.subItems && (
@@ -146,7 +167,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeTab, setActiveTab, onCl
                   
                   {item.subItems && isExpanded && (
                     <div className="mt-1 ml-4 space-y-1 border-l-2 border-gray-100 dark:border-gray-700 pl-2">
-                      {item.subItems.map((sub) => (
+                      {item.subItems
+                        .filter(sub => isSuper || userRole === 'ADMIN' || authService.hasPermission(sub.id))
+                        .map((sub) => (
                         <button
                           key={sub.id}
                           onClick={() => handleNavigation(sub.id)}
@@ -166,6 +189,13 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeTab, setActiveTab, onCl
               );
             })}
           </nav>
+        </div>
+        
+        <div className="p-4 border-t border-gray-100 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/50 shrink-0">
+           <div className="flex items-center gap-3 px-3">
+              <div className={`w-2 h-2 rounded-full animate-pulse ${isSuper ? 'bg-blue-500' : (userRole === 'ADMIN' ? 'bg-emerald-500' : 'bg-orange-500')}`}></div>
+              <span className="text-[10px] font-bold text-gray-400 uppercase tracking-widest">{isSuper ? 'Super Admin' : (userRole === 'ADMIN' ? 'Owner Node' : `Role: ${userRole}`)}</span>
+           </div>
         </div>
       </aside>
     </>

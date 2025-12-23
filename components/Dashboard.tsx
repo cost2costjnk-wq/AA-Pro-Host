@@ -1,6 +1,6 @@
-
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
+import { authService } from '../services/authService';
 import { Reminder, Transaction, Product, ServiceJob } from '../types';
 import { formatCurrency } from '../services/formatService';
 import { formatNepaliDate, adToBs, bsToAd, BS_MONTHS, getBsMonthDays } from '../services/nepaliDateService';
@@ -43,6 +43,8 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dashboardFileInputRef = useRef<HTMLInputElement>(null);
   const { addToast } = useToast();
+  const userRole = authService.getUserRole();
+  const isAdmin = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
 
   useEffect(() => {
     loadDashboardData();
@@ -395,7 +397,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
        </div>
 
        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-           {/* Alerts & Reminders - Spanning 2 columns now */}
+           {/* Alerts & Reminders */}
            <div className="lg:col-span-2 bg-white rounded-2xl border border-gray-200 shadow-sm min-h-[420px] flex flex-col overflow-hidden">
               <div className="px-4 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50/50">
                   <h3 className="font-bold text-gray-800 flex items-center gap-2">
@@ -449,45 +451,55 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               </div>
            </div>
 
-           {/* Backup & Restore Column */}
+           {/* Backup & Restore Column - Hidden for staff roles */}
            <div className="space-y-6">
-                <button onClick={() => { setShowBackupModal(true); scanLocalPath(); }} className="w-full bg-indigo-50 p-6 rounded-3xl border border-indigo-100 flex items-center justify-between hover:bg-indigo-100 transition-all group shadow-sm">
-                    <div className="flex items-center gap-5">
-                        <div className="bg-white p-4 rounded-2xl text-indigo-600 shadow-md group-hover:scale-110 transition-transform"><History className="w-8 h-8" /></div>
-                        <div className="text-left">
-                            <span className="font-black text-indigo-900 uppercase text-xs tracking-widest block mb-1">Local Backups</span>
-                            <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-tighter">RESTORE FROM HISTORY</span>
-                        </div>
-                    </div>
-                    <ArrowRight className="w-6 h-6 text-indigo-300 group-hover:translate-x-1 transition-transform" />
-                </button>
+                {isAdmin ? (
+                    <>
+                        <button onClick={() => { setShowBackupModal(true); scanLocalPath(); }} className="w-full bg-indigo-50 p-6 rounded-3xl border border-indigo-100 flex items-center justify-between hover:bg-indigo-100 transition-all group shadow-sm">
+                            <div className="flex items-center gap-5">
+                                <div className="bg-white p-4 rounded-2xl text-indigo-600 shadow-md group-hover:scale-110 transition-transform"><History className="w-8 h-8" /></div>
+                                <div className="text-left">
+                                    <span className="font-black text-indigo-900 uppercase text-xs tracking-widest block mb-1">Local Backups</span>
+                                    <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-tighter">RESTORE FROM HISTORY</span>
+                                </div>
+                            </div>
+                            <ArrowRight className="w-6 h-6 text-indigo-300 group-hover:translate-x-1 transition-transform" />
+                        </button>
 
-                <button onClick={() => dashboardFileInputRef.current?.click()} className="w-full bg-blue-50 p-6 rounded-3xl border border-blue-100 flex items-center justify-between hover:bg-blue-100 transition-all group shadow-sm active:scale-[0.99]">
-                    <input type="file" accept=".json" ref={dashboardFileInputRef} className="hidden" onChange={handleFileUploadRestore} />
-                    <div className="flex items-center gap-5">
-                        <div className="bg-white p-4 rounded-2xl text-blue-600 shadow-md group-hover:scale-110 transition-transform"><Database className="w-8 h-8" /></div>
-                        <div className="text-left">
-                            <span className="font-black text-blue-900 uppercase text-xs tracking-widest block mb-1">Restore Data</span>
-                            <span className="text-[10px] text-blue-500 font-bold uppercase tracking-tighter">UPLOAD BACKUP FILE</span>
-                        </div>
-                    </div>
-                    <Upload className="w-6 h-6 text-blue-300 group-hover:-translate-y-1 transition-transform" />
-                </button>
+                        <button onClick={() => dashboardFileInputRef.current?.click()} className="w-full bg-blue-50 p-6 rounded-3xl border border-blue-100 flex items-center justify-between hover:bg-blue-100 transition-all group shadow-sm active:scale-[0.99]">
+                            <input type="file" accept=".json" ref={dashboardFileInputRef} className="hidden" onChange={handleFileUploadRestore} />
+                            <div className="flex items-center gap-5">
+                                <div className="bg-white p-4 rounded-2xl text-blue-600 shadow-md group-hover:scale-110 transition-transform"><Database className="w-8 h-8" /></div>
+                                <div className="text-left">
+                                    <span className="font-black text-blue-900 uppercase text-xs tracking-widest block mb-1">Restore Data</span>
+                                    <span className="text-[10px] text-blue-500 font-bold uppercase tracking-tighter">UPLOAD BACKUP FILE</span>
+                                </div>
+                            </div>
+                            <Upload className="w-6 h-6 text-blue-300 group-hover:-translate-y-1 transition-transform" />
+                        </button>
 
-                <button onClick={handleManualBackup} disabled={isSyncing} className="w-full bg-emerald-50 p-6 rounded-3xl border border-emerald-100 flex items-center justify-between hover:bg-emerald-100 transition-all group shadow-sm active:scale-[0.99] disabled:opacity-50">
-                    <div className="flex items-center gap-5">
-                        <div className="bg-white p-4 rounded-2xl text-emerald-600 shadow-md group-hover:scale-110 transition-transform">
-                            {isSyncing ? <Loader2 className="w-8 h-8 animate-spin" /> : <RefreshCw className="w-8 h-8" />}
-                        </div>
-                        <div className="text-left">
-                            <span className="font-black text-emerald-900 uppercase text-xs tracking-widest block mb-1">Quick Backup</span>
-                            <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-tighter">IMMEDIATE SNAPSHOT</span>
-                        </div>
+                        <button onClick={handleManualBackup} disabled={isSyncing} className="w-full bg-emerald-50 p-6 rounded-3xl border border-emerald-100 flex items-center justify-between hover:bg-emerald-100 transition-all group shadow-sm active:scale-[0.99] disabled:opacity-50">
+                            <div className="flex items-center gap-5">
+                                <div className="bg-white p-4 rounded-2xl text-emerald-600 shadow-md group-hover:scale-110 transition-transform">
+                                    {isSyncing ? <Loader2 className="w-8 h-8 animate-spin" /> : <RefreshCw className="w-8 h-8" />}
+                                </div>
+                                <div className="text-left">
+                                    <span className="font-black text-emerald-900 uppercase text-xs tracking-widest block mb-1">Quick Backup</span>
+                                    <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-tighter">IMMEDIATE SNAPSHOT</span>
+                                </div>
+                            </div>
+                            <div className="flex items-center gap-2 px-3 py-1 bg-emerald-600 text-white rounded-full text-[9px] font-black uppercase tracking-wider">
+                                <ShieldCheck className="w-3 h-3" /> Secure
+                            </div>
+                        </button>
+                    </>
+                ) : (
+                    <div className="bg-gray-100/50 p-8 rounded-[2.5rem] border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-center">
+                        <Activity className="w-12 h-12 text-gray-300 mb-4" />
+                        <h4 className="text-xs font-black uppercase text-gray-400 tracking-widest">Workspace Insights</h4>
+                        <p className="text-[10px] text-gray-400 mt-2 font-medium">Additional analytics are restricted based on your staff role.</p>
                     </div>
-                    <div className="flex items-center gap-2 px-3 py-1 bg-emerald-600 text-white rounded-full text-[9px] font-black uppercase tracking-wider">
-                        <ShieldCheck className="w-3 h-3" /> Secure
-                    </div>
-                </button>
+                )}
            </div>
        </div>
 

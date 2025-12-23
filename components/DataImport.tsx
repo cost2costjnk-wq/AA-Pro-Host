@@ -1,6 +1,5 @@
-
 import React, { useState, useRef } from 'react';
-import { Upload, CheckCircle, AlertCircle, FileSpreadsheet, ArrowRight, Database, RefreshCcw } from 'lucide-react';
+import { Upload, CheckCircle, AlertCircle, FileSpreadsheet, ArrowRight, Database, RefreshCcw, Wrench, RotateCcw } from 'lucide-react';
 import { db } from '../services/db';
 import { Party, Product, Transaction } from '../types';
 
@@ -64,14 +63,17 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
   };
 
   const handleFile = (file: File) => {
+    if (!file) return;
     setFile(file);
     setError('');
     setSuccess('');
     setPreviewData([]);
     setBackupAnalysis(null);
     
+    const fileName = (file.name || '').toLowerCase();
+
     if (activeTab === 'backup') {
-        const isJson = file.type === 'application/json' || file.name.toLowerCase().endsWith('.json');
+        const isJson = file.type === 'application/json' || fileName.endsWith('.json');
         if (!isJson) {
              setError('Please upload a valid JSON backup file.');
              return;
@@ -86,6 +88,8 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
                     transactions: Array.isArray(json.transactions) ? json.transactions.length : 0,
                     products: Array.isArray(json.products) ? json.products.length : 0,
                     parties: Array.isArray(json.parties) ? json.parties.length : 0,
+                    serviceJobs: Array.isArray(json.serviceJobs) ? json.serviceJobs.length : 0,
+                    warrantyCases: Array.isArray(json.warrantyCases) ? json.warrantyCases.length : 0,
                     date: json.timestamp || new Date().toISOString()
                 });
             } catch (err) {
@@ -125,7 +129,7 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
       } else if (activeTab === 'items') {
         const newProducts: Product[] = previewData.map((row, i) => ({
              id: Date.now().toString() + i, 
-             name: row["Item Name"],
+             name: row["Item Name"] || 'Unnamed Item',
              category: row["Category"] || 'General',
              stock: Number(row["Opening Stock"] || 0),
              purchasePrice: Number(row["Purchase Price"]) || 0,
@@ -137,7 +141,7 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
       } else {
         const newParties: Party[] = previewData.map((row, i) => ({
              id: Date.now().toString() + i,
-             name: row["Party Name"],
+             name: row["Party Name"] || 'Unnamed Party',
              phone: row["Phone Number"] || '',
              type: (row["Customer/Supplier"] || 'Customer').toLowerCase().includes('supplier') ? 'supplier' : 'customer',
              balance: 0 
@@ -165,10 +169,32 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
          <div className="bg-white p-6 rounded-xl border border-gray-200">
-            <h3 className="font-bold text-lg mb-6 text-gray-800">Manual Data Entry</h3>
+            <h3 className="font-bold text-lg mb-6 text-gray-800">Backup Analysis</h3>
             {activeTab === 'backup' ? (
-                <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 text-orange-800 text-sm">
-                    <strong>Warning:</strong> Restoring a backup overwrites everything.
+                <div className="space-y-4">
+                    <div className="bg-orange-50 p-4 rounded-lg border border-orange-100 text-orange-800 text-sm">
+                        <strong>Warning:</strong> Restoring a backup overwrites everything in the current workspace.
+                    </div>
+                    {backupAnalysis && (
+                        <div className="grid grid-cols-2 gap-3 mt-4">
+                            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Transactions</p>
+                                <p className="text-xl font-black text-gray-800">{backupAnalysis.transactions}</p>
+                            </div>
+                            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Service Jobs</p>
+                                <p className="text-xl font-black text-blue-600 flex items-center gap-1"><Wrench className="w-4 h-4" /> {backupAnalysis.serviceJobs}</p>
+                            </div>
+                            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Warranty Cases</p>
+                                <p className="text-xl font-black text-purple-600 flex items-center gap-1"><RotateCcw className="w-4 h-4" /> {backupAnalysis.warrantyCases}</p>
+                            </div>
+                            <div className="p-3 bg-gray-50 rounded-xl border border-gray-100">
+                                <p className="text-[10px] font-black text-gray-400 uppercase tracking-widest">Total Products</p>
+                                <p className="text-xl font-black text-emerald-600">{backupAnalysis.products}</p>
+                            </div>
+                        </div>
+                    )}
                 </div>
             ) : (
                 <p className="text-sm text-gray-500">Upload Excel template files to quickly populate your database.</p>
@@ -184,24 +210,29 @@ const DataImport: React.FC<DataImportProps> = ({ onBack }) => {
          >
             <input ref={inputRef} type="file" className="hidden" accept={activeTab === 'backup' ? ".json" : ".xlsx, .xls"} onChange={handleChange} />
             {file ? (
-               <div className="text-center">
+               <div className="text-center p-6">
                   <Database className="w-12 h-12 text-emerald-500 mx-auto mb-2" />
-                  <p className="font-bold text-gray-800">{file.name}</p>
-                  {backupAnalysis && <p className="text-xs text-gray-500 mt-1">{backupAnalysis.transactions} Txns | {backupAnalysis.products} Items</p>}
-                  <button onClick={handleImport} disabled={processing} className="mt-4 px-6 py-2 bg-brand-500 text-white rounded-lg font-bold">
-                    {processing ? 'Restoring...' : 'Confirm Restore'}
+                  <p className="font-bold text-gray-800 truncate max-w-[200px] mx-auto">{file.name}</p>
+                  {backupAnalysis && (
+                      <p className="text-xs text-gray-500 mt-1">
+                        Workspace: <b>{backupAnalysis.company}</b>
+                      </p>
+                  )}
+                  <button onClick={handleImport} disabled={processing} className="mt-4 px-8 py-2.5 bg-brand-500 text-white rounded-xl font-bold shadow-lg shadow-brand-500/20 active:scale-95 transition-all">
+                    {processing ? 'Restoring System...' : 'Confirm System Restore'}
                   </button>
                </div>
             ) : (
                <div className="text-center">
                   <Upload className="w-12 h-12 text-gray-400 mx-auto mb-2" />
-                  <p className="font-bold text-gray-800">Click to upload file</p>
+                  <p className="font-bold text-gray-800">Click to upload backup file</p>
+                  <p className="text-xs text-gray-400 mt-1">JSON or Excel Format</p>
                </div>
             )}
          </div>
       </div>
-      {error && <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg">{error}</div>}
-      {success && <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg">{success}</div>}
+      {error && <div className="p-3 bg-red-50 text-red-700 text-sm rounded-lg flex items-center gap-2"><AlertCircle className="w-4 h-4" /> {error}</div>}
+      {success && <div className="p-3 bg-green-50 text-green-700 text-sm rounded-lg flex items-center gap-2"><CheckCircle className="w-4 h-4" /> {success}</div>}
     </div>
   );
 };

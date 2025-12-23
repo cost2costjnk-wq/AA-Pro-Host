@@ -14,21 +14,27 @@ import ExpenseList from './components/ExpenseList';
 import ExpenseForm from './components/ExpenseForm';
 import Reports from './components/Reports';
 import ManageAccounts from './components/ManageAccounts';
-import AIAssistant from './components/AIAssistant';
 import CompanySelector from './components/CompanySelector';
 import ServiceCenter from './components/ServiceCenter';
+import WarrantyManager from './components/WarrantyManager';
 import CashDrawerManager from './components/CashDrawer';
 import LoginPage from './components/LoginPage';
-import { Transaction } from './types';
+import ShortcutGuide from './components/ShortcutGuide';
+import ActivationPage from './components/ActivationPage';
+import AdminDashboard from './components/AdminDashboard';
+import AIAssistant from './components/AIAssistant';
+import { Transaction, TransactionItem } from './types';
 import { db } from './services/db';
 import { authService } from './services/authService';
 import { autoBackupService } from './services/autoBackupService';
-import { Loader2, RefreshCw, X, Database } from 'lucide-react';
+import { subscriptionService } from './services/subscriptionService';
+import { Loader2, RefreshCw, X, Database, ShieldAlert } from 'lucide-react';
 import { useToast } from './components/Toast';
 
 const App: React.FC = () => {
   const [isDbReady, setIsDbReady] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated());
+  const [isSubscribed, setIsSubscribed] = useState(false);
   const [companySelected, setCompanySelected] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -42,30 +48,76 @@ const App: React.FC = () => {
   const [detectedBackup, setDetectedBackup] = useState<any | null>(null);
 
   const { addToast } = useToast();
+  const isSuper = authService.isSuperAdmin();
+
+  const checkSubscription = () => {
+    const status = subscriptionService.getSubscriptionStatus();
+    setIsSubscribed(status.isSubscribed);
+  };
+
+  const setRoleBasedInitialTab = () => {
+      const currentTab = activeTab;
+      if (!authService.hasPermission(currentTab)) {
+          const menuOrder = [
+            'dashboard', 'parties', 'inventory', 'service-center', 'warranty-return', 
+            'sales-invoices', 'purchase-bills', 'cash-drawer', 'expense', 'reports', 'settings'
+          ];
+          const firstAllowed = menuOrder.find(id => authService.hasPermission(id));
+          if (firstAllowed) setActiveTab(firstAllowed);
+      }
+  };
 
   useEffect(() => {
-    setIsLoggedIn(authService.isAuthenticated());
-
     const initApp = async () => {
-      const activeId = localStorage.getItem('active_company_id');
+      if (!isLoggedIn) {
+          setIsDbReady(true);
+          return;
+      }
+
+      if (authService.isSuperAdmin()) {
+          setIsDbReady(true);
+          return;
+      }
+
+      let activeId = localStorage.getItem('active_company_id');
+      
+      if (!activeId && authService.getUserRole() === 'ADMIN') {
+         const companies = await db.getCompanies();
+         if (companies.length > 0) {
+            activeId = companies[0].id;
+            localStorage.setItem('active_company_id', activeId);
+         }
+      }
+
       if (activeId) {
         await db.init(activeId);
         if (db.getActiveCompanyId()) {
            setCompanySelected(true);
            setIsDbReady(true);
+           checkSubscription();
            autoBackupService.start();
+           setRoleBasedInitialTab();
         } else {
            localStorage.removeItem('active_company_id');
+           setCompanySelected(false);
            setIsDbReady(true);
         }
       } else {
+        setCompanySelected(false);
         setIsDbReady(true);
       }
     };
     initApp();
 
-    const handleUpdate = () => setRefreshKey(prev => prev + 1);
-    const handleLogout = () => { setCompanySelected(false); autoBackupService.stop(); };
+    const handleUpdate = () => {
+        setRefreshKey(prev => prev + 1);
+        if (isLoggedIn) checkSubscription();
+    };
+    const handleLogout = () => { 
+        setCompanySelected(false); 
+        setIsLoggedIn(false);
+        autoBackupService.stop(); 
+    };
     const handleBackupDetected = (e: any) => setDetectedBackup(e.detail);
     
     window.addEventListener('db-updated', handleUpdate);
@@ -78,36 +130,42 @@ const App: React.FC = () => {
        window.removeEventListener('new-backup-detected', handleBackupDetected);
        autoBackupService.stop();
     }
-  }, []);
+  }, [isLoggedIn]);
 
   // Keyboard Shortcuts Listener
   useEffect(() => {
+    if (!isSubscribed || isSuper || !isLoggedIn) return;
+
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
-      // Only trigger if Alt is pressed
       if (e.altKey) {
         const key = e.key.toLowerCase();
-        
-        if (key === 's') { // Alt + S: New Sale
+        if (key === 's' && authService.hasPermission('sales-invoices')) { 
           e.preventDefault();
           setEditingTransaction(null);
           setShowPos('SALE');
-        } else if (key === 'p') { // Alt + P: New Purchase
+        } else if (key === 'a' && authService.hasPermission('receivable-aging')) { 
+          e.preventDefault();
+          setActiveTab('receivable-aging');
+        } else if (key === 'l' && authService.hasPermission('sales-invoices')) { 
+          e.preventDefault();
+          setActiveTab('sales-invoices');
+        } else if (key === 'p' && authService.hasPermission('purchase-bills')) { 
           e.preventDefault();
           setEditingTransaction(null);
           setShowPos('PURCHASE');
-        } else if (key === 'i') { // Alt + I: Payment In
+        } else if (key === 'i' && authService.hasPermission('sales-payment-in')) { 
           e.preventDefault();
           setOverlayEditingTransaction(null);
           setShowOverlay('PAYMENT_IN');
-        } else if (key === 'o') { // Alt + O: Payment Out
+        } else if (key === 'o' && authService.hasPermission('purchase-payment-out')) { 
           e.preventDefault();
           setOverlayEditingTransaction(null);
           setShowOverlay('PAYMENT_OUT');
-        } else if (key === 'e') { // Alt + E: New Expense
+        } else if (key === 'e' && authService.hasPermission('expense')) { 
           e.preventDefault();
           setOverlayEditingTransaction(null);
           setShowOverlay('EXPENSE');
-        } else if (key === 'd') { // Alt + D: Dashboard
+        } else if (key === 'd' && authService.hasPermission('dashboard')) { 
           e.preventDefault();
           setActiveTab('dashboard');
         }
@@ -116,18 +174,18 @@ const App: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
-  }, []);
+  }, [isSubscribed, isSuper, isLoggedIn]);
 
   const handlePerformSync = async () => {
     if (!detectedBackup) return;
-    const confirmRestore = window.confirm(`Update Local System?\nA newer backup was found: ${detectedBackup.name}\n\nThis will update your local data to the state from ${detectedBackup.date}. Continue?`);
+    const confirmRestore = window.confirm(`Update Local System?\nA newer backup was found: ${detectedBackup.name}\n\nThis will update your local data. Continue?`);
     
     if (confirmRestore) {
         const result = await db.restoreData(detectedBackup.data);
         if (result.success) {
-            addToast('System successfully synchronized with latest backup!', 'success');
+            addToast('System successfully synchronized!', 'success');
             setDetectedBackup(null);
-            setTimeout(() => window.location.reload(), 1000);
+            setRefreshKey(prev => prev + 1);
         } else {
             addToast('Synchronization failed.', 'error');
         }
@@ -146,143 +204,103 @@ const App: React.FC = () => {
     }
   };
 
-  const handleConvertTransaction = (t: Transaction) => {
-      const targetType = t.type === 'QUOTATION' ? 'SALE' : 'PURCHASE';
+  const handleAutoOrderConvert = (items: TransactionItem[]) => {
       setEditingTransaction({
-          ...t,
-          type: targetType,
-          id: '', 
-          date: new Date().toISOString(),
-      });
-      setShowPos(targetType);
-  };
-
-  const handleAutoOrderConvert = (items: any[]) => {
-      setEditingTransaction({
-          id: '',
+          id: '', // Will be auto-generated in PosForm
           date: new Date().toISOString(),
           type: 'PURCHASE',
           partyId: '',
           partyName: '',
           items: items,
-          totalAmount: items.reduce((s, i) => s + i.amount, 0)
+          totalAmount: items.reduce((s, i) => s + i.amount, 0),
+          notes: 'Auto-generated from Restock Assistant'
       } as Transaction);
       setShowPos('PURCHASE');
   };
 
   const renderContent = () => {
+    if (!authService.hasPermission(activeTab)) {
+        return (
+            <div className="h-full flex flex-col items-center justify-center p-10 text-center">
+                <div className="w-24 h-24 bg-red-50 rounded-[2rem] flex items-center justify-center mb-6">
+                    <ShieldAlert className="w-12 h-12 text-red-500" />
+                </div>
+                <h2 className="text-2xl font-black text-gray-900 uppercase">Access Denied</h2>
+                <p className="text-gray-500 mt-2 max-w-sm">Permissions missing for <b>{activeTab}</b>.</p>
+                <button onClick={() => setActiveTab('dashboard')} className="mt-8 px-8 py-3 bg-gray-900 text-white rounded-2xl font-bold text-xs uppercase tracking-widest">Go Home</button>
+            </div>
+        );
+    }
+
     switch (activeTab) {
       case 'dashboard': return <Dashboard onNavigate={setActiveTab} />;
       case 'parties': return <Parties />;
       case 'inventory': return <Inventory refreshKey={refreshKey} onNavigateToRestock={() => setActiveTab('purchase-auto-order')} />;
       case 'pricelist': return <PriceList />;
       case 'service-center': return <ServiceCenter />;
+      case 'warranty-return': return <WarrantyManager />;
       case 'cash-drawer': return <CashDrawerManager />;
       case 'settings': return <Settings />;
-
-      // Sales Group
-      case 'sales-invoices': 
-        return <TransactionList type="SALE" onNew={() => { setEditingTransaction(null); setShowPos('SALE'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
-      case 'sales-payment-in':
-        return <TransactionList type="PAYMENT_IN" onNew={() => { setOverlayEditingTransaction(null); setShowOverlay('PAYMENT_IN'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
-      case 'sales-quotations':
-        return <TransactionList type="QUOTATION" onNew={() => { setEditingTransaction(null); setShowPos('QUOTATION'); }} refreshKey={refreshKey} onEdit={handleEdit} onConvert={handleConvertTransaction} />;
-      case 'sales-return':
-        return <TransactionList type="SALE_RETURN" onNew={() => { setEditingTransaction(null); setShowPos('SALE_RETURN'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
-
-      // Purchase Group
-      case 'purchase-bills':
-        return <TransactionList type="PURCHASE" onNew={() => { setEditingTransaction(null); setShowPos('PURCHASE'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
-      case 'purchase-payment-out':
-        return <TransactionList type="PAYMENT_OUT" onNew={() => { setOverlayEditingTransaction(null); setShowOverlay('PAYMENT_OUT'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
-      case 'purchase-orders':
-        return <TransactionList type="PURCHASE_ORDER" onNew={() => { setEditingTransaction(null); setShowPos('PURCHASE_ORDER'); }} refreshKey={refreshKey} onEdit={handleEdit} onConvert={handleConvertTransaction} />;
-      case 'purchase-return':
-        return <TransactionList type="PURCHASE_RETURN" onNew={() => { setEditingTransaction(null); setShowPos('PURCHASE_RETURN'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
-      case 'purchase-auto-order':
-        return <Reports targetReport="OUT_OF_STOCK" onConsumeTarget={() => {}} onConvertToPurchase={handleAutoOrderConvert} />;
-
-      // Expense & Accounts
-      case 'expense':
-        return <ExpenseList onNew={() => { setOverlayEditingTransaction(null); setShowOverlay('EXPENSE'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
-      case 'manage-accounts':
-        return <ManageAccounts />;
-      case 'reports':
-        return <Reports />;
-
+      case 'shortcut-keys': return <ShortcutGuide />;
+      case 'sales-invoices': return <TransactionList type="SALE" onNew={() => { setEditingTransaction(null); setShowPos('SALE'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
+      case 'sales-payment-in': return <TransactionList type="PAYMENT_IN" onNew={() => { setOverlayEditingTransaction(null); setShowOverlay('PAYMENT_IN'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
+      case 'sales-quotations': return <TransactionList type="QUOTATION" onNew={() => { setEditingTransaction(null); setShowPos('QUOTATION'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
+      case 'sales-return': return <TransactionList type="SALE_RETURN" onNew={() => { setEditingTransaction(null); setShowPos('SALE_RETURN'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
+      case 'purchase-bills': return <TransactionList type="PURCHASE" onNew={() => { setEditingTransaction(null); setShowPos('PURCHASE'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
+      case 'purchase-payment-out': return <TransactionList type="PAYMENT_OUT" onNew={() => { setOverlayEditingTransaction(null); setShowOverlay('PAYMENT_OUT'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
+      case 'purchase-orders': return <TransactionList type="PURCHASE_ORDER" onNew={() => { setEditingTransaction(null); setShowPos('PURCHASE_ORDER'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
+      case 'purchase-return': return <TransactionList type="PURCHASE_RETURN" onNew={() => { setEditingTransaction(null); setShowPos('PURCHASE_RETURN'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
+      case 'expense': return <ExpenseList onNew={() => { setOverlayEditingTransaction(null); setShowOverlay('EXPENSE'); }} refreshKey={refreshKey} onEdit={handleEdit} />;
+      case 'manage-accounts': return <ManageAccounts />;
+      case 'reports': return <Reports onEditTransaction={handleEdit} />;
+      case 'purchase-auto-order': return <Reports targetReport="OUT_OF_STOCK" onConsumeTarget={() => {}} onEditTransaction={handleEdit} onConvertToPurchase={handleAutoOrderConvert} />;
+      case 'receivable-aging': return <Reports targetReport="RECEIVABLE_AGING" onConsumeTarget={() => {}} onEditTransaction={handleEdit} />;
       default: return <Dashboard onNavigate={setActiveTab} />;
     }
   };
 
   if (!isLoggedIn) return <LoginPage onLoginSuccess={() => setIsLoggedIn(true)} />;
-  if (!isDbReady) return <div className="flex h-screen items-center justify-center bg-gray-50 dark:bg-gray-900"><Loader2 className="w-10 h-10 animate-spin text-brand-500" /></div>;
+  if (!isDbReady) return <div className="flex h-screen items-center justify-center bg-gray-50"><Loader2 className="w-10 h-10 animate-spin text-brand-500" /></div>;
+  
+  if (isSuper) return <AdminDashboard />;
+
   if (!companySelected) return <CompanySelector onSelect={() => setCompanySelected(true)} />;
+  
+  if (!isSubscribed) return <ActivationPage onActivated={() => setIsSubscribed(true)} />;
 
   return (
-    <div key={refreshKey} className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-hidden font-sans">
-      <div className="print:hidden">
-        <Sidebar isOpen={sidebarOpen} activeTab={activeTab} setActiveTab={setActiveTab} onClose={() => setSidebarOpen(false)} />
-      </div>
-      
+    <div className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-hidden font-sans">
+      <Sidebar isOpen={sidebarOpen} activeTab={activeTab} setActiveTab={setActiveTab} onClose={() => setSidebarOpen(false)} />
       <div id="main-app-container" className="flex-1 flex flex-col min-w-0 overflow-hidden relative">
-        <div className="print:hidden">
-            <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} />
-        </div>
-        
+        <Header onMenuClick={() => setSidebarOpen(!sidebarOpen)} onNavigate={setActiveTab} />
         <main className="flex-1 overflow-y-auto relative">{renderContent()}</main>
-        
-        <div className="print:hidden">
-            <AIAssistant />
-        </div>
+        <AIAssistant />
       </div>
 
-      {/* Auto-Restore Background Sync Prompt */}
       {detectedBackup && (
-        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-md px-4 animate-in slide-in-from-bottom-10 duration-500 print:hidden">
-            <div className="bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border-2 border-brand-500 p-5 flex flex-col gap-4 overflow-hidden relative">
-                <div className="absolute top-0 right-0 p-1">
-                    <button onClick={() => setDetectedBackup(null)} className="p-1 text-gray-400 hover:text-gray-600 dark:hover:text-gray-200">
-                        <X className="w-4 h-4" />
-                    </button>
-                </div>
-                
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] w-full max-w-md px-4 animate-in slide-in-from-bottom-10">
+            <div className="bg-white rounded-2xl shadow-2xl border-2 border-brand-500 p-5 flex flex-col gap-4">
                 <div className="flex items-start gap-4">
-                    <div className="w-12 h-12 rounded-xl bg-brand-50 dark:bg-brand-900/30 flex items-center justify-center text-brand-600 dark:text-brand-400 shrink-0">
+                    <div className="w-12 h-12 rounded-xl bg-brand-50 flex items-center justify-center text-brand-600 shrink-0">
                         <RefreshCw className="w-6 h-6 animate-spin-slow" />
                     </div>
                     <div className="flex-1 min-w-0">
-                        <h4 className="font-black text-gray-900 dark:text-white text-sm uppercase tracking-tight">Newer Backup Found!</h4>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
-                            A newer version of your data from <b>{detectedBackup.date}</b> is available in your local folder.
-                        </p>
+                        <h4 className="font-black text-gray-900 text-sm uppercase">Newer Backup Found!</h4>
+                        <p className="text-xs text-gray-500 mt-1">Local data from <b>{detectedBackup.date}</b> is available.</p>
                     </div>
+                    <button onClick={() => setDetectedBackup(null)}><X className="w-4 h-4 text-gray-400" /></button>
                 </div>
-
-                <div className="flex gap-2">
-                    <button 
-                        onClick={() => setDetectedBackup(null)}
-                        className="flex-1 py-2.5 rounded-xl border border-gray-200 dark:border-gray-700 text-xs font-bold text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-700 transition-colors"
-                    >
-                        Ignore
-                    </button>
-                    <button 
-                        onClick={handlePerformSync}
-                        className="flex-2 flex items-center justify-center gap-2 py-2.5 px-6 rounded-xl bg-brand-500 text-white text-xs font-bold shadow-lg shadow-brand-500/20 hover:bg-brand-600 transition-all active:scale-95"
-                    >
-                        <RefreshCw className="w-3.5 h-3.5" />
-                        Sync & Restore Now
-                    </button>
-                </div>
+                <button onClick={handlePerformSync} className="w-full py-2.5 rounded-xl bg-brand-500 text-white text-xs font-bold">Sync & Restore Now</button>
             </div>
         </div>
       )}
 
-      {showPos && <PosForm type={showPos} initialData={editingTransaction} onClose={() => setShowPos(null)} onSave={() => { setShowPos(null); setRefreshKey(prev => prev + 1); }} />}
+      {showPos && <PosForm key={`pos-${showPos}`} type={showPos} initialData={editingTransaction} onClose={() => setShowPos(null)} onSave={() => { setShowPos(null); setRefreshKey(prev => prev + 1); }} />}
 
       {showOverlay && (
-        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-[2px] print:hidden">
-          {(showOverlay === 'PAYMENT_IN' || showOverlay === 'PAYMENT_OUT') && <PaymentForm type={showOverlay as 'PAYMENT_IN' | 'PAYMENT_OUT'} initialData={overlayEditingTransaction} onClose={() => setShowOverlay(null)} onSave={() => { setShowOverlay(null); setRefreshKey(prev => prev + 1); }} />}
-          {showOverlay === 'EXPENSE' && <ExpenseForm initialData={overlayEditingTransaction} onClose={() => setShowOverlay(null)} onSave={() => { setShowOverlay(null); setRefreshKey(prev => prev + 1); }} />}
+        <div className="fixed inset-0 z-[60] flex items-center justify-center bg-black/40 backdrop-blur-[2px]">
+          {(showOverlay === 'PAYMENT_IN' || showOverlay === 'PAYMENT_OUT') && <PaymentForm key={`pmt-${showOverlay}`} type={showOverlay as 'PAYMENT_IN' | 'PAYMENT_OUT'} initialData={overlayEditingTransaction} onClose={() => setShowOverlay(null)} onSave={() => { setShowOverlay(null); setRefreshKey(prev => prev + 1); }} />}
+          {showOverlay === 'EXPENSE' && <ExpenseForm key="exp-form" initialData={overlayEditingTransaction} onClose={() => setShowOverlay(null)} onSave={() => { setShowOverlay(null); setRefreshKey(prev => prev + 1); }} />}
         </div>
       )}
     </div>

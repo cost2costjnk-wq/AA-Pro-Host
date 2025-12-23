@@ -29,6 +29,19 @@ export interface Reminder {
   amount?: number;
 }
 
+// User & Permissions
+export type UserRole = 'ADMIN' | 'SALESMAN' | 'ACCOUNTANT' | 'DATA_ENTRY' | 'SUPER_ADMIN';
+
+export interface User {
+  id: string;
+  name: string;
+  email: string;
+  password: string;
+  role: UserRole;
+  permissions: string[]; // Granular module access
+  createdAt: string;
+}
+
 // Cash Drawer Types
 export type Denomination = 1000 | 500 | 100 | 50 | 20 | 10 | 5 | 2 | 1;
 
@@ -40,6 +53,25 @@ export interface CashNoteCount {
 export interface CashDrawer {
   notes: CashNoteCount[];
   lastUpdated: string;
+}
+
+// Subscription Types
+export interface SubscriptionInfo {
+  licenseKey: string;
+  activatedAt: string; // ISO Date
+  expiresAt: string;   // ISO Date
+  status: 'active' | 'expired' | 'trial';
+  deviceId?: string;   // Bound device identifier
+}
+
+export interface IssuedLicense {
+  id: string;
+  clientName: string;
+  contactNumber: string;
+  deviceId: string;
+  licenseKey: string;
+  issuedAt: string;
+  expiresAt: string;
 }
 
 // Data Models
@@ -184,4 +216,30 @@ export interface ServiceJob {
   usedParts: TransactionItem[];
   laborCharge: number;
   finalAmount: number; // (Parts + Labor) - Advance
+}
+
+export interface WarrantyItem {
+  id: string;
+  productId: string;
+  productName: string;
+  serialNumber: string;
+  problemDescription: string;
+}
+
+export interface WarrantyCase {
+  id: string;
+  ticketNumber: string;
+  customerId: string;
+  customerName: string;
+  items: WarrantyItem[];
+  dateReceived: string; // From Customer
+  
+  vendorId?: string;
+  vendorName?: string;
+  dateSentToVendor?: string;
+  dateReceivedFromVendor?: string;
+  dateReturnedToCustomer?: string;
+  
+  status: 'RECEIVED' | 'SENT' | 'VENDOR_RETURNED' | 'CLOSED' | 'CANCELLED';
+  notes?: string;
 }

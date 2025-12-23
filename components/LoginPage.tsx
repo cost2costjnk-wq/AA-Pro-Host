@@ -18,16 +18,18 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
     setIsLoading(true);
     setError('');
 
-    // Small delay to simulate security check
-    setTimeout(() => {
-      const success = authService.login(email, password);
+    try {
+      const success = await authService.login(email, password);
       if (success) {
         onLoginSuccess();
       } else {
         setError('Invalid email or password. Please try again.');
         setIsLoading(false);
       }
-    }, 800);
+    } catch (err) {
+      setError('System authentication error. Please try again.');
+      setIsLoading(false);
+    }
   };
 
   return (
@@ -121,7 +123,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
             </button>
             <div className="w-px h-3 bg-gray-200 dark:bg-gray-800"></div>
             <p className="text-[10px] font-black text-gray-400 dark:text-gray-600 uppercase tracking-widest">
-                Build v2.5.0-AUTO
+                Build v2.7.1-IDB
             </p>
         </div>
       </div>

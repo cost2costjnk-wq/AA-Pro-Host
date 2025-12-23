@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/db';
 import { Party, Transaction, Account, CashNoteCount, Denomination } from '../types';
@@ -61,6 +60,16 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ type, initialData, onClose, o
     }
   }, [initialData]);
 
+  // Auto-scroll logic for Party Dropdown
+  useEffect(() => {
+    if (showPartyDropdown && dropdownRef.current) {
+        const highlightedEl = dropdownRef.current.querySelector(`[data-index="${highlightedIndex}"]`);
+        if (highlightedEl) {
+            highlightedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    }
+  }, [highlightedIndex, showPartyDropdown]);
+
   // Form Shortcut Keys
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
@@ -110,6 +119,30 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ type, initialData, onClose, o
   };
 
   const filteredParties = parties.filter(p => p.name.toLowerCase().includes(partySearchTerm.toLowerCase()));
+
+  const handlePartyKeyDown = (e: React.KeyboardEvent) => {
+    if (showPartyDropdown) {
+        const total = filteredParties.length;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setHighlightedIndex(prev => (prev + 1) % total);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlightedIndex(prev => (prev - 1 + total) % total);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (filteredParties[highlightedIndex]) {
+                const p = filteredParties[highlightedIndex];
+                setSelectedPartyId(p.id);
+                setPartySearchTerm(p.name);
+                setShowPartyDropdown(false);
+            }
+        } else if (e.key === 'Escape') {
+            setShowPartyDropdown(false);
+        }
+    }
+  };
+
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
   const isCashAccount = selectedAccount?.type === 'Cash';
   const receivedSum = receivedNotes.reduce((s, n) => s + (n.denomination * n.count), 0);
@@ -156,10 +189,29 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ type, initialData, onClose, o
           </div>
           <div className="relative">
              <label className="block text-xs font-bold text-gray-500 uppercase mb-1">Party</label>
-             <input type="text" required className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-brand-500" placeholder="Search Party..." value={partySearchTerm} onChange={e => {setPartySearchTerm(e.target.value); setShowPartyDropdown(true);}} />
+             <input 
+                type="text" 
+                required 
+                className="w-full border border-gray-300 rounded-lg p-2 text-sm outline-none focus:ring-2 focus:ring-brand-500" 
+                placeholder="Search Party..." 
+                value={partySearchTerm} 
+                onChange={e => {setPartySearchTerm(e.target.value); setShowPartyDropdown(true); setHighlightedIndex(0);}} 
+                onFocus={() => setShowPartyDropdown(true)}
+                onKeyDown={handlePartyKeyDown}
+             />
              {showPartyDropdown && (
-                 <div className="absolute top-full left-0 w-full bg-white border rounded shadow-lg z-20 max-h-40 overflow-auto mt-1">
-                    {filteredParties.map(p => <div key={p.id} className="p-2 hover:bg-gray-100 cursor-pointer text-sm" onClick={() => {setSelectedPartyId(p.id); setPartySearchTerm(p.name); setShowPartyDropdown(false);}}>{p.name}</div>)}
+                 <div ref={dropdownRef} className="absolute top-full left-0 w-full bg-white border border-gray-200 rounded-lg shadow-xl z-20 max-h-48 overflow-auto mt-1">
+                    {filteredParties.map((p, idx) => (
+                        <div 
+                            key={p.id} 
+                            data-index={idx}
+                            className={`p-2.5 border-b border-gray-50 last:border-0 cursor-pointer text-sm font-medium ${highlightedIndex === idx ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-50 text-gray-700'}`} 
+                            onClick={() => {setSelectedPartyId(p.id); setPartySearchTerm(p.name); setShowPartyDropdown(false);}}
+                        >
+                            {p.name}
+                        </div>
+                    ))}
+                    {filteredParties.length === 0 && <div className="p-3 text-xs text-gray-400 italic">No parties found</div>}
                  </div>
              )}
           </div>
@@ -172,7 +224,7 @@ const PaymentForm: React.FC<PaymentFormProps> = ({ type, initialData, onClose, o
                     {accounts.map(acc => <option key={acc.id} value={acc.id}>{acc.name}</option>)}
                 </select>
                 {isCashAccount && (
-                    <button type="button" onClick={() => setShowCashModal(true)} className={`p-2 rounded-lg border flex items-center justify-center transition-all ${receivedSum > 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-600' : 'bg-white border-gray-300 text-gray-400'}`} title="Notes Breakdown"><Banknote className="w-5 h-5" /></button>
+                    <button type="button" onClick={() => setShowCashModal(true)} className={`p-2 rounded-lg border flex items-center justify-center transition-all ${receivedSum > 0 ? 'bg-emerald-50 border-emerald-200 text-emerald-600 shadow-sm' : 'bg-white border-gray-300 text-gray-400'}`} title="Notes Breakdown"><Banknote className="w-5 h-5" /></button>
                 )}
              </div>
           </div>

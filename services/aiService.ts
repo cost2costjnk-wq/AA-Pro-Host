@@ -1,4 +1,3 @@
-
 import { GoogleGenAI } from "@google/genai";
 import { db } from './db';
 import { formatCurrency } from './formatService';
@@ -108,14 +107,8 @@ const getSystemContext = () => {
 
 export const generateBusinessInsight = async (userQuery: string): Promise<string> => {
   try {
-    // Safety check for process.env to prevent crashes on static environments
-    const apiKey = (typeof process !== 'undefined' && process.env) ? process.env.API_KEY : null;
-    
-    if (!apiKey) {
-      return "AI Assistant is not fully configured for this environment (API Key missing). Please ensure your build environment injects the API_KEY variable.";
-    }
-
-    const ai = new GoogleGenAI({ apiKey });
+    // Initializing with process.env.API_KEY directly as per SDK guidelines.
+    const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const context = getSystemContext();
 
     const response = await ai.models.generateContent({
@@ -140,6 +133,7 @@ export const generateBusinessInsight = async (userQuery: string): Promise<string
       }
     });
 
+    // Access the .text property directly on the GenerateContentResponse object.
     return response.text || "I was unable to analyze that data. Could you please try rephrasing your question?";
   } catch (error) {
     console.error("AI Service Error:", error);

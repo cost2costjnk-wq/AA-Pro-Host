@@ -1,7 +1,8 @@
 
+import { openDB, IDBPDatabase } from 'idb';
 import { 
   Company, BusinessProfile, DatabaseConfig, CloudConfig, 
-  Account, Party, Product, Transaction, Reminder, DashboardStat, CashFlowData, ServiceJob, TransactionItem, CashDrawer, CashNoteCount, Denomination 
+  Account, Party, Product, Transaction, Reminder, ServiceJob, TransactionItem, CashDrawer, CashNoteCount, Denomination, WarrantyCase, SubscriptionInfo, User, IssuedLicense
 } from '../types';
 
 interface CompanyData {
@@ -14,9 +15,16 @@ interface CompanyData {
   transactions: Transaction[];
   reminders: Reminder[];
   serviceJobs: ServiceJob[];
+  warrantyCases: WarrantyCase[];
   replenishmentDraft?: any[];
   cashDrawer: CashDrawer;
+  users: User[];
 }
+
+const DB_NAME = 'aapro_enterprise_v2';
+const COMPANIES_STORE = 'companies';
+const DATA_STORE = 'company_data';
+const GLOBAL_CONFIG_STORE = 'global_config';
 
 const DEFAULT_CASH_DRAWER: CashDrawer = {
   notes: [
@@ -33,14 +41,12 @@ const DEFAULT_CASH_DRAWER: CashDrawer = {
   lastUpdated: new Date().toISOString()
 };
 
-// Use a function to get default data to ensure fresh object references for every company/restore
 const getInitialCompanyData = (name: string = 'My Business'): CompanyData => ({
   profile: { name, address: '', pan: '', phone: '' },
   dbConfig: { mode: 'local' },
   cloudConfig: { 
     enabled: true, 
     autoBackup: true, 
-    backupTime: '16:00',
     backupSchedules: ['09:00', '13:00', '18:00', '21:00'],
     googleClientId: '476453033908-4utdf52i85jssocqgghjpcpturfkkeu4.apps.googleusercontent.com' 
   },
@@ -52,54 +58,62 @@ const getInitialCompanyData = (name: string = 'My Business'): CompanyData => ({
   transactions: [],
   reminders: [],
   serviceJobs: [],
+  warrantyCases: [],
   replenishmentDraft: [],
-  cashDrawer: JSON.parse(JSON.stringify(DEFAULT_CASH_DRAWER))
+  cashDrawer: JSON.parse(JSON.stringify(DEFAULT_CASH_DRAWER)),
+  users: []
 });
 
 export class DatabaseService {
   private activeCompanyId: string | null = null;
   private cache: CompanyData = getInitialCompanyData();
-  private companies: Company[] = [];
+  private db: IDBPDatabase | null = null;
+  private globalSubInfo: SubscriptionInfo | undefined = undefined;
 
-  constructor() {
-    this.loadCompanies();
-  }
-
-  private loadCompanies() {
-    const stored = localStorage.getItem('aapro_companies');
-    if (stored) {
-      this.companies = JSON.parse(stored);
-    } else {
-      this.companies = [];
-    }
+  async initDb() {
+    if (this.db) return this.db;
+    this.db = await openDB(DB_NAME, 2, {
+      upgrade(db, oldVersion) {
+        if (!db.objectStoreNames.contains(COMPANIES_STORE)) {
+          db.createObjectStore(COMPANIES_STORE, { keyPath: 'id' });
+        }
+        if (!db.objectStoreNames.contains(DATA_STORE)) {
+          db.createObjectStore(DATA_STORE);
+        }
+        if (!db.objectStoreNames.contains(GLOBAL_CONFIG_STORE)) {
+          db.createObjectStore(GLOBAL_CONFIG_STORE);
+        }
+      },
+    });
+    return this.db;
   }
 
   async getCompanies(): Promise<Company[]> {
-    return this.companies;
+    const db = await this.initDb();
+    return await db.getAll(COMPANIES_STORE);
   }
 
   async createCompany(name: string): Promise<Company> {
+    const db = await this.initDb();
     const newCompany: Company = {
       id: Date.now().toString(),
       name,
       dbName: `aapro_db_${Date.now()}`,
       created: new Date().toISOString()
     };
-    this.companies.push(newCompany);
-    localStorage.setItem('aapro_companies', JSON.stringify(this.companies));
-    
-    localStorage.setItem(newCompany.dbName, JSON.stringify(getInitialCompanyData(name)));
-    
+    await db.put(COMPANIES_STORE, newCompany);
+    await db.put(DATA_STORE, getInitialCompanyData(name), newCompany.id);
     return newCompany;
   }
 
   async switchCompany(id: string) {
-    const company = this.companies.find(c => c.id === id);
+    const db = await this.initDb();
+    const company = await db.get(COMPANIES_STORE, id);
     if (!company) throw new Error('Company not found');
     
     this.activeCompanyId = id;
     localStorage.setItem('active_company_id', id);
-    this.loadData(company.dbName);
+    await this.loadDataIntoCache(id);
     window.dispatchEvent(new Event('db-updated'));
   }
 
@@ -108,10 +122,11 @@ export class DatabaseService {
   }
 
   async init(id: string) {
-     const company = this.companies.find(c => c.id === id);
+     const db = await this.initDb();
+     const company = await db.get(COMPANIES_STORE, id);
      if (company) {
        this.activeCompanyId = id;
-       this.loadData(company.dbName);
+       await this.loadDataIntoCache(id);
      }
   }
 
@@ -122,44 +137,127 @@ export class DatabaseService {
     window.dispatchEvent(new Event('db-logout'));
   }
 
-  private loadData(dbName: string) {
-    const stored = localStorage.getItem(dbName);
+  private async loadDataIntoCache(companyId: string) {
+    const db = await this.initDb();
+    const stored = await db.get(DATA_STORE, companyId);
+    
+    // Load Global Subscription Info separately to ensure it persists across company changes
+    this.globalSubInfo = await db.get(GLOBAL_CONFIG_STORE, 'subscription_info');
+
     if (stored) {
-      const parsed = JSON.parse(stored);
-      // Create a fresh default object to merge into
       const defaults = getInitialCompanyData();
-      
       this.cache = {
           ...defaults,
-          ...parsed,
-          profile: { ...defaults.profile, ...(parsed.profile || {}) },
-          cloudConfig: { 
-            ...defaults.cloudConfig, 
-            ...(parsed.cloudConfig || {}),
-            googleClientId: '476453033908-4utdf52i85jssocqgghjpcpturfkkeu4.apps.googleusercontent.com'
-          },
-          // Explicitly merge cashDrawer to handle legacy or incomplete backups
+          ...stored,
+          profile: { ...defaults.profile, ...(stored.profile || {}) },
+          cloudConfig: { ...defaults.cloudConfig, ...(stored.cloudConfig || {}) },
           cashDrawer: {
             ...defaults.cashDrawer,
-            ...(parsed.cashDrawer || {}),
-            notes: (parsed.cashDrawer?.notes && Array.isArray(parsed.cashDrawer.notes)) 
-                   ? parsed.cashDrawer.notes 
-                   : defaults.cashDrawer.notes
-          }
+            ...(stored.cashDrawer || {}),
+            notes: (stored.cashDrawer?.notes && Array.isArray(stored.cashDrawer.notes)) ? stored.cashDrawer.notes : defaults.cashDrawer.notes
+          },
+          serviceJobs: stored.serviceJobs || [],
+          warrantyCases: stored.warrantyCases || [],
+          users: stored.users || []
       };
     } else {
       this.cache = getInitialCompanyData();
     }
   }
 
-  private persist() {
+  private async persist() {
     if (!this.activeCompanyId) return;
-    const company = this.companies.find(c => c.id === this.activeCompanyId);
-    if (company) {
-      localStorage.setItem(company.dbName, JSON.stringify(this.cache));
-      window.dispatchEvent(new Event('db-updated'));
-      window.dispatchEvent(new Event('db-content-changed')); // Triggers auto-cloud-push
-    }
+    const db = await this.initDb();
+    await db.put(DATA_STORE, this.cache, this.activeCompanyId);
+    window.dispatchEvent(new Event('db-updated'));
+    window.dispatchEvent(new Event('db-content-changed'));
+  }
+
+  // --- Global Admin License Methods ---
+  async getGlobalIssuedLicenses(): Promise<IssuedLicense[]> {
+    const db = await this.initDb();
+    return (await db.get(GLOBAL_CONFIG_STORE, 'issued_licenses')) || [];
+  }
+
+  async addGlobalIssuedLicense(license: IssuedLicense) {
+    const db = await this.initDb();
+    const licenses = (await db.get(GLOBAL_CONFIG_STORE, 'issued_licenses')) || [];
+    licenses.push(license);
+    await db.put(GLOBAL_CONFIG_STORE, licenses, 'issued_licenses');
+  }
+
+  async deleteGlobalIssuedLicense(id: string) {
+    const db = await this.initDb();
+    const licenses = (await db.get(GLOBAL_CONFIG_STORE, 'issued_licenses')) || [];
+    const filtered = licenses.filter((l: IssuedLicense) => l.id !== id);
+    await db.put(GLOBAL_CONFIG_STORE, filtered, 'issued_licenses');
+  }
+
+  // --- User Management ---
+  getUsers() { return this.cache.users || []; }
+  addUser(u: User) { this.cache.users.push(u); this.persist(); }
+  updateUser(u: User) {
+    const idx = this.cache.users.findIndex(user => user.id === u.id);
+    if (idx !== -1) { this.cache.users[idx] = u; this.persist(); }
+  }
+  deleteUser(id: string) {
+    this.cache.users = this.cache.users.filter(u => u.id !== id);
+    this.persist();
+  }
+
+  // --- Financial Year Closing Logic ---
+  async closeAndStartNewYear(nextYearName: string) {
+    if (!this.activeCompanyId) return { success: false, message: 'No active session' };
+
+    const currentProfile = this.cache.profile;
+    const carryParties = [...this.cache.parties];
+    const carryProducts = [...this.cache.products];
+    const carryAccounts = [...this.cache.accounts];
+    const carryCashDrawer = JSON.parse(JSON.stringify(this.cache.cashDrawer));
+    const carryUsers = this.cache.users;
+    
+    const carryServiceJobs = this.cache.serviceJobs.filter(j => !['DELIVERED', 'CANCELLED'].includes(j.status));
+    const carryWarrantyCases = this.cache.warrantyCases.filter(w => !['CLOSED', 'CANCELLED'].includes(w.status));
+
+    const newYearCompany = await this.createCompany(`${currentProfile.name} (${nextYearName})`);
+    
+    const newData: CompanyData = getInitialCompanyData(currentProfile.name);
+    newData.profile = { ...currentProfile };
+    newData.cloudConfig = { ...this.cache.cloudConfig };
+    newData.cashDrawer = carryCashDrawer;
+    newData.serviceJobs = carryServiceJobs;
+    newData.warrantyCases = carryWarrantyCases;
+    newData.users = carryUsers;
+    
+    const openingTxns: Transaction[] = [];
+    const date = new Date().toISOString();
+
+    newData.accounts = carryAccounts.map(acc => ({ ...acc, balance: acc.balance }));
+    newData.parties = carryParties.map(p => {
+        if (p.balance !== 0) {
+            openingTxns.push({
+                id: `OP-${p.id}-${Date.now()}`,
+                date,
+                type: 'BALANCE_ADJUSTMENT',
+                partyId: p.id,
+                partyName: p.name,
+                items: [],
+                totalAmount: p.balance,
+                notes: 'Financial Year Opening Balance',
+                category: 'Opening Balance',
+                paymentMode: 'Adjustment'
+            });
+        }
+        return { ...p, balance: 0 }; 
+    });
+    newData.products = carryProducts.map(p => ({ ...p, stock: p.stock }));
+
+    const db = await this.initDb();
+    await db.put(DATA_STORE, newData, newYearCompany.id);
+    await this.switchCompany(newYearCompany.id);
+    openingTxns.forEach(t => this.addTransaction(t));
+    
+    return { success: true, companyId: newYearCompany.id };
   }
 
   getBusinessProfile() { return this.cache.profile; }
@@ -168,10 +266,21 @@ export class DatabaseService {
   updateCloudConfig(c: CloudConfig) { this.cache.cloudConfig = c; this.persist(); }
   getDatabaseConfig() { return this.cache.dbConfig; }
   
-  getCashDrawer(): CashDrawer { 
-    return this.cache.cashDrawer || JSON.parse(JSON.stringify(DEFAULT_CASH_DRAWER)); 
-  }
+  getCashDrawer(): CashDrawer { return this.cache.cashDrawer || JSON.parse(JSON.stringify(DEFAULT_CASH_DRAWER)); }
   updateCashDrawer(drawer: CashDrawer) { this.cache.cashDrawer = drawer; this.persist(); }
+
+  // Fixed: Get Subscription info from global config store, not company cache
+  getSubscriptionInfo(): SubscriptionInfo | undefined { 
+    return this.globalSubInfo; 
+  }
+
+  // Fixed: Save Subscription info to global config store
+  async updateSubscriptionInfo(s: SubscriptionInfo) { 
+    const db = await this.initDb();
+    this.globalSubInfo = s;
+    await db.put(GLOBAL_CONFIG_STORE, s, 'subscription_info');
+    window.dispatchEvent(new Event('db-updated'));
+  }
 
   getAccounts() { return this.cache.accounts; }
   addAccount(a: Account) { this.cache.accounts.push(a); this.persist(); }
@@ -192,10 +301,7 @@ export class DatabaseService {
      const idx = this.cache.parties.findIndex(item => item.id === p.id);
      if (idx !== -1) { this.cache.parties[idx] = p; this.persist(); }
   }
-  async bulkAddParties(parties: Party[]) {
-    this.cache.parties.push(...parties);
-    this.persist();
-  }
+  async bulkAddParties(parties: Party[]) { this.cache.parties.push(...parties); this.persist(); }
 
   getProducts() { return this.cache.products; }
   addProduct(p: Product) { this.cache.products.push(p); this.persist(); }
@@ -203,11 +309,11 @@ export class DatabaseService {
     const idx = this.cache.products.findIndex(item => item.id === p.id);
     if (idx !== -1) { this.cache.products[idx] = p; this.persist(); }
   }
-  deleteProduct(id: string) { this.cache.products = this.cache.products.filter(p => p.id !== id); this.persist(); }
-  async bulkAddProducts(products: Product[]) {
-    this.cache.products.push(...products);
+  deleteProduct(id: string) {
+    this.cache.products = this.cache.products.filter(p => p.id !== id);
     this.persist();
   }
+  async bulkAddProducts(products: Product[]) { this.cache.products.push(...products); this.persist(); }
 
   getTransactions() { return this.cache.transactions; }
   addTransaction(t: Transaction) {
@@ -231,7 +337,6 @@ export class DatabaseService {
   }
 
   private applyImpact(t: Transaction, factor: number) {
-     // 1. Party Balance
      if (t.partyId) {
         const party = this.cache.parties.find(p => p.id === t.partyId);
         if (party) {
@@ -241,39 +346,27 @@ export class DatabaseService {
                 case 'PURCHASE': amt = -t.totalAmount; break;
                 case 'PAYMENT_IN': amt = -t.totalAmount; break;
                 case 'PAYMENT_OUT': amt = t.totalAmount; break;
+                case 'BALANCE_ADJUSTMENT': amt = t.totalAmount; break;
+                case 'SALE_RETURN': amt = -t.totalAmount; break;
+                case 'PURCHASE_RETURN': amt = t.totalAmount; break;
             }
             party.balance += (amt * factor);
         }
      }
-     // 2. Inventory
      t.items?.forEach(item => {
         const p = this.cache.products.find(prod => prod.id === item.productId);
         if (p && p.type !== 'service') {
-            if (t.type === 'SALE') p.stock -= (item.quantity * factor);
-            else if (t.type === 'PURCHASE') p.stock += (item.quantity * factor);
+            if (t.type === 'SALE' || t.type === 'PURCHASE_RETURN') p.stock -= (item.quantity * factor);
+            else if (t.type === 'PURCHASE' || t.type === 'SALE_RETURN') p.stock += (item.quantity * factor);
         }
      });
-     // 3. Accounts
      if (t.accountId) {
         const acc = this.cache.accounts.find(a => a.id === t.accountId);
         if (acc) {
-            let amt = (['SALE', 'PAYMENT_IN'].includes(t.type)) ? t.totalAmount : -t.totalAmount;
+            let amt = (['SALE', 'PAYMENT_IN', 'PURCHASE_RETURN'].includes(t.type)) ? t.totalAmount : -t.totalAmount;
+            if (t.type === 'BALANCE_ADJUSTMENT') amt = t.totalAmount;
             acc.balance += (amt * factor);
         }
-     }
-     // 4. Cash Drawer
-     if (t.cashBreakdown && t.paymentMode === 'Cash') {
-         const drawer = this.getCashDrawer();
-         t.cashBreakdown.received.forEach(rec => {
-             const note = drawer.notes.find(n => n.denomination === rec.denomination);
-             if (note) note.count += (rec.count * factor);
-         });
-         t.cashBreakdown.returned.forEach(ret => {
-             const note = drawer.notes.find(n => n.denomination === ret.denomination);
-             if (note) note.count -= (ret.count * factor);
-         });
-         drawer.lastUpdated = new Date().toISOString();
-         this.cache.cashDrawer = drawer;
      }
   }
 
@@ -287,23 +380,39 @@ export class DatabaseService {
       const idx = this.cache.serviceJobs.findIndex(job => job.id === j.id);
       if (idx !== -1) { this.cache.serviceJobs[idx] = j; this.persist(); }
   }
-  deleteServiceJob(id: string) { this.cache.serviceJobs = this.cache.serviceJobs.filter(j => j.id !== id); this.persist(); }
+  deleteServiceJob(id: string) {
+    this.cache.serviceJobs = this.cache.serviceJobs.filter(j => j.id !== id);
+    this.persist();
+  }
+
+  getWarrantyCases() { return this.cache.warrantyCases || []; }
+  addWarrantyCase(c: WarrantyCase) { this.cache.warrantyCases.push(c); this.persist(); }
+  updateWarrantyCase(c: WarrantyCase) {
+    const idx = this.cache.warrantyCases.findIndex(item => item.id === c.id);
+    if (idx !== -1) { this.cache.warrantyCases[idx] = c; this.persist(); }
+  }
+  deleteWarrantyCase(id: string) {
+    this.cache.warrantyCases = this.cache.warrantyCases.filter(c => c.id !== id);
+    this.persist();
+  }
 
   getBackupData() {
     return { 
       ...this.cache, 
-      backupVersion: '2.6', 
+      backupVersion: '2.7-IDB', 
       timestamp: new Date().toISOString(),
-      appId: 'AA_PRO_ENTERPRISE'
+      appId: 'AA_PRO_ENTERPRISE',
+      companyId: this.activeCompanyId
     };
   }
 
   async restoreData(data: any) {
      if (!data || typeof data !== 'object') return { success: false, message: 'Invalid data format' };
-     
      const defaults = getInitialCompanyData();
      
-     // Merge incoming data with defaults to ensure all keys like cashDrawer exist
+     // Note: We deliberately do NOT overwrite subscriptionInfo from the restored file
+     // so that the local machine activation remains primary.
+     
      this.cache = {
          ...defaults,
          ...data,
@@ -312,17 +421,17 @@ export class DatabaseService {
          cashDrawer: {
             ...defaults.cashDrawer,
             ...(data.cashDrawer || {}),
-            notes: (data.cashDrawer?.notes && Array.isArray(data.cashDrawer.notes)) 
-                   ? data.cashDrawer.notes 
-                   : defaults.cashDrawer.notes
-         }
+            notes: (data.cashDrawer?.notes && Array.isArray(data.cashDrawer.notes)) ? data.cashDrawer.notes : defaults.cashDrawer.notes
+         },
+         serviceJobs: data.serviceJobs || [],
+         warrantyCases: data.warrantyCases || [],
+         users: data.users || []
      };
-
-     this.persist();
+     await this.persist();
      return { success: true };
   }
 
-  async listTables() { return ['transactions', 'parties', 'products', 'accounts', 'serviceJobs', 'reminders']; }
+  async listTables() { return ['transactions', 'parties', 'products', 'accounts', 'serviceJobs', 'warrantyCases', 'reminders', 'users']; }
   async getTableData(table: string) { return (this.cache as any)[table] || []; }
   getReplenishmentDraft() { return this.cache.replenishmentDraft || []; }
   updateReplenishmentDraft(d: any[]) { this.cache.replenishmentDraft = d; this.persist(); }

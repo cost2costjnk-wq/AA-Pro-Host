@@ -1,9 +1,8 @@
-
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/db';
-import { Transaction, Account, CashNoteCount, Denomination } from '../types';
+import { Transaction, Account, CashNoteCount, Denomination, Party } from '../types';
 import NepaliDatePicker from './NepaliDatePicker';
-import { X, Save, Receipt, ChevronDown, Banknote, RotateCcw, Sparkles } from 'lucide-react';
+import { X, Save, Receipt, ChevronDown, Banknote, RotateCcw, Sparkles, Search, User } from 'lucide-react';
 import { formatCurrency } from '../services/formatService';
 import { useToast } from './Toast';
 
@@ -32,13 +31,21 @@ const COMMON_CATEGORIES = [
 
 const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave }) => {
   const [accounts, setAccounts] = useState<Account[]>([]);
+  const [parties, setParties] = useState<Party[]>([]);
+  
   const [expNo, setExpNo] = useState(Date.now().toString().slice(-6));
   const [date, setDate] = useState(new Date().toISOString());
   const [category, setCategory] = useState('Petrol');
-  const [selectedAccountId, setSelectedAccountId] = useState('1'); // Default Cash
+  const [selectedAccountId, setSelectedAccountId] = useState('1'); 
   const [amount, setAmount] = useState<number | ''>('');
   const [remarks, setRemarks] = useState('');
+  
+  // Searchable Party Logic
   const [paidTo, setPaidTo] = useState('');
+  const [selectedPartyId, setSelectedPartyId] = useState('');
+  const [showPartyDropdown, setShowPartyDropdown] = useState(false);
+  const [highlightedIndex, setHighlightedIndex] = useState(0);
+  const dropdownRef = useRef<HTMLDivElement>(null);
 
   // Cash Breakdown State
   const [showCashModal, setShowCashModal] = useState(false);
@@ -49,6 +56,8 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
 
   useEffect(() => {
     setAccounts(db.getAccounts());
+    setParties(db.getParties());
+    
     if (initialData) {
       setExpNo(initialData.id);
       setDate(initialData.date);
@@ -56,6 +65,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
       setAmount(initialData.totalAmount);
       setRemarks(initialData.notes || '');
       setPaidTo(initialData.partyName !== 'General Expense' ? initialData.partyName : '');
+      setSelectedPartyId(initialData.partyId || '');
       if (initialData.accountId) {
         setSelectedAccountId(initialData.accountId);
       }
@@ -65,6 +75,16 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
       }
     }
   }, [initialData]);
+
+  // Auto-scroll logic for Party Dropdown
+  useEffect(() => {
+    if (showPartyDropdown && dropdownRef.current) {
+        const highlightedEl = dropdownRef.current.querySelector(`[data-index="${highlightedIndex}"]`);
+        if (highlightedEl) {
+            highlightedEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+        }
+    }
+  }, [highlightedIndex, showPartyDropdown]);
 
   // Form Shortcut Keys
   useEffect(() => {
@@ -94,7 +114,7 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
       id: expNo,
       date: date,
       type: 'EXPENSE',
-      partyId: '', // No specific party ID for general expenses
+      partyId: selectedPartyId,
       partyName: paidTo || 'General Expense',
       items: [], 
       totalAmount: Number(amount),
@@ -102,15 +122,11 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
       category: category,
       accountId: selectedAccountId,
       paymentMode: isCash ? 'Cash' : 'Bank',
-      // Store the physical notes given out in the 'returned' array (which subtracts from drawer in db.ts)
       cashBreakdown: isCash ? { received: receivedNotes, returned: returnedNotes } : undefined
     };
 
-    if (initialData) {
-      db.updateTransaction(initialData.id, transactionData);
-    } else {
-      db.addTransaction(transactionData);
-    }
+    if (initialData) db.updateTransaction(initialData.id, transactionData);
+    else db.addTransaction(transactionData);
 
     onSave();
   };
@@ -118,6 +134,31 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     triggerSave();
+  };
+
+  const filteredParties = parties.filter(p => p.name.toLowerCase().includes(paidTo.toLowerCase()));
+
+  const handlePartyKeyDown = (e: React.KeyboardEvent) => {
+    if (showPartyDropdown) {
+        const total = filteredParties.length;
+        if (e.key === 'ArrowDown') {
+            e.preventDefault();
+            setHighlightedIndex(prev => (prev + 1) % total);
+        } else if (e.key === 'ArrowUp') {
+            e.preventDefault();
+            setHighlightedIndex(prev => (prev - 1 + total) % total);
+        } else if (e.key === 'Enter') {
+            e.preventDefault();
+            if (filteredParties[highlightedIndex]) {
+                const p = filteredParties[highlightedIndex];
+                setSelectedPartyId(p.id);
+                setPaidTo(p.name);
+                setShowPartyDropdown(false);
+            }
+        } else if (e.key === 'Escape') {
+            setShowPartyDropdown(false);
+        }
+    }
   };
 
   const selectedAccount = accounts.find(a => a.id === selectedAccountId);
@@ -128,7 +169,6 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
       const drawer = db.getCashDrawer();
       let diff = Number(amount || 0);
       if (diff <= 0) return;
-      
       const suggestions: CashNoteCount[] = [];
       const tempAvailable = new Map(drawer.notes.map(n => [n.denomination, n.count]));
 
@@ -148,7 +188,6 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
     <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
       <div className="bg-white rounded-xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
         
-        {/* Header */}
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between bg-gray-50">
           <div className="flex items-center gap-3">
             <div className="p-2 rounded-lg bg-orange-100 text-orange-600">
@@ -166,7 +205,6 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
         </div>
 
         <form onSubmit={handleSave} className="flex-1 overflow-y-auto p-6 space-y-5">
-          
           <div className="grid grid-cols-2 gap-4">
              <div>
                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Expense No</label>
@@ -187,21 +225,52 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
              </div>
           </div>
 
-          <div>
-             <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Category</label>
-             <div className="relative">
-               <select 
-                 required
-                 className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none bg-white"
-                 value={category}
-                 onChange={e => setCategory(e.target.value)}
-               >
-                 {COMMON_CATEGORIES.map(c => (
-                   <option key={c} value={c}>{c}</option>
-                 ))}
-               </select>
-               <ChevronDown className="absolute right-3 top-3 w-4 h-4 text-gray-400 pointer-events-none" />
-             </div>
+          <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Category</label>
+                <div className="relative">
+                <select 
+                    required
+                    className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none bg-white"
+                    value={category}
+                    onChange={e => setCategory(e.target.value)}
+                >
+                    {COMMON_CATEGORIES.map(c => (
+                    <option key={c} value={c}>{c}</option>
+                    ))}
+                </select>
+                <ChevronDown className="absolute right-3 top-3 w-4 h-4 text-gray-400 pointer-events-none" />
+                </div>
+              </div>
+              <div className="relative">
+                <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Paid To (Searchable)</label>
+                <div className="relative">
+                    <input 
+                        type="text" 
+                        className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none pl-9 font-medium"
+                        placeholder="Recipient name..."
+                        value={paidTo}
+                        onChange={e => {setPaidTo(e.target.value); setShowPartyDropdown(true); setHighlightedIndex(0);}}
+                        onFocus={() => setShowPartyDropdown(true)}
+                        onKeyDown={handlePartyKeyDown}
+                    />
+                    <User className="absolute left-3 top-3 w-4 h-4 text-gray-400" />
+                </div>
+                {showPartyDropdown && paidTo && (
+                    <div ref={dropdownRef} className="absolute top-full left-0 w-full bg-white border border-gray-200 rounded-xl shadow-xl z-20 max-h-40 overflow-auto mt-1">
+                        {filteredParties.map((p, idx) => (
+                            <div 
+                                key={p.id} 
+                                data-index={idx}
+                                className={`p-2.5 border-b border-gray-50 last:border-0 cursor-pointer text-xs font-bold ${highlightedIndex === idx ? 'bg-brand-50 text-brand-700' : 'hover:bg-gray-50 text-gray-700'}`} 
+                                onClick={() => {setSelectedPartyId(p.id); setPaidTo(p.name); setShowPartyDropdown(false);}}
+                            >
+                                {p.name}
+                            </div>
+                        ))}
+                    </div>
+                )}
+              </div>
           </div>
 
           <div>
@@ -221,41 +290,29 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
              </div>
           </div>
 
-          <div className="grid grid-cols-2 gap-4">
-            <div>
-               <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Paid From</label>
-               <div className="flex gap-2">
-                <select 
-                    className="flex-1 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none bg-white"
-                    value={selectedAccountId}
-                    onChange={e => setSelectedAccountId(e.target.value)}
+          <div>
+             <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Paid From</label>
+             <div className="flex gap-2">
+            <select 
+                className="flex-1 border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none appearance-none bg-white"
+                value={selectedAccountId}
+                onChange={e => setSelectedAccountId(e.target.value)}
+            >
+                {accounts.map(acc => (
+                    <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>
+                ))}
+            </select>
+            {isCashAccount && (
+                <button 
+                    type="button" 
+                    onClick={() => setShowCashModal(true)} 
+                    className={`p-2 rounded-lg border flex items-center justify-center transition-all ${notesOutSum > 0 ? 'bg-orange-50 border-orange-200 text-orange-600 shadow-sm' : 'bg-white border-gray-300 text-gray-400 hover:bg-gray-50'}`}
+                    title="Cash Drawer Note Entry"
                 >
-                    {accounts.map(acc => (
-                      <option key={acc.id} value={acc.id}>{acc.name} ({acc.type})</option>
-                    ))}
-                </select>
-                {isCashAccount && (
-                    <button 
-                      type="button" 
-                      onClick={() => setShowCashModal(true)} 
-                      className={`p-2 rounded-lg border flex items-center justify-center transition-all ${notesOutSum > 0 ? 'bg-orange-50 border-orange-200 text-orange-600 shadow-sm' : 'bg-white border-gray-300 text-gray-400 hover:bg-gray-50'}`}
-                      title="Cash Drawer Note Entry"
-                    >
-                        <Banknote className="w-5 h-5" />
-                    </button>
-                )}
-               </div>
-            </div>
-            <div>
-               <label className="block text-xs font-semibold text-gray-500 uppercase mb-1">Paid To (Optional)</label>
-               <input 
-                 type="text" 
-                 className="w-full border border-gray-300 rounded-lg p-2.5 text-sm focus:ring-2 focus:ring-emerald-500 outline-none"
-                 placeholder="Name of receiver..."
-                 value={paidTo}
-                 onChange={e => setPaidTo(e.target.value)}
-               />
-            </div>
+                    <Banknote className="w-5 h-5" />
+                </button>
+            )}
+             </div>
           </div>
 
           <div>
@@ -271,27 +328,14 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
         </form>
 
         <div className="p-4 border-t bg-gray-50 flex justify-end gap-3">
-          <button 
-            type="button" 
-            onClick={onClose} 
-            className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors"
-          >
-            Cancel
-          </button>
-          <button 
-            type="submit" 
-            onClick={handleSave}
-            disabled={!amount}
-            className="px-6 py-2.5 bg-emerald-500 text-white font-medium rounded-lg shadow-sm flex items-center gap-2 hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <Save className="w-4 h-4" />
-            Save Expense
+          <button type="button" onClick={onClose} className="px-5 py-2.5 text-gray-600 font-medium hover:bg-gray-200 rounded-lg transition-colors">Cancel</button>
+          <button type="submit" onClick={handleSave} disabled={!amount} className="px-6 py-2.5 bg-emerald-500 text-white font-medium rounded-lg shadow-sm flex items-center gap-2 hover:bg-emerald-600 transition-colors disabled:opacity-50 disabled:cursor-not-allowed">
+            <Save className="w-4 h-4" /> Save Expense
           </button>
         </div>
 
       </div>
 
-      {/* Cash Note Breakdown Modal */}
       {showCashModal && (
           <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
               <div className="bg-white rounded-2xl w-full max-w-lg shadow-2xl flex flex-col max-h-[90vh] overflow-hidden">
@@ -310,33 +354,17 @@ const ExpenseForm: React.FC<ExpenseFormProps> = ({ initialData, onClose, onSave 
 
                       <div className="flex justify-between items-center">
                           <h4 className="font-bold text-gray-800 text-sm uppercase">Physical Notes Leaving Drawer</h4>
-                          <button 
-                            type="button" 
-                            onClick={handleAutoSuggest} 
-                            className="text-[10px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded font-bold border border-emerald-100 flex items-center gap-1"
-                          >
-                              <Sparkles className="w-3 h-3" /> Auto-Suggest
-                          </button>
+                          <button type="button" onClick={handleAutoSuggest} className="text-[10px] bg-emerald-50 text-emerald-600 px-2 py-1 rounded font-bold border border-emerald-100 flex items-center gap-1"><Sparkles className="w-3 h-3" /> Auto-Suggest</button>
                       </div>
 
                       <div className="space-y-2">
                           {returnedNotes.map((n, i) => (
                               <div key={n.denomination} className={`flex items-center justify-between p-3 rounded-xl border transition-all ${n.count > 0 ? 'bg-brand-50 border-brand-200' : 'bg-white border-gray-100'}`}>
                                   <div className="flex items-center gap-3">
-                                    {/* Fix: changed note.denomination to n.denomination */}
                                     <div className={`w-10 h-7 rounded flex items-center justify-center font-bold text-xs ${n.denomination >= 500 ? 'bg-red-100 text-red-700' : 'bg-green-100 text-green-700'}`}>{n.denomination}</div>
                                     <X className="w-3 h-3 text-gray-300" />
                                   </div>
-                                  <input 
-                                    type="number" 
-                                    min="0" 
-                                    className="w-20 p-2 border border-gray-300 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-brand-500" 
-                                    value={n.count || ''} 
-                                    onChange={e => {
-                                      const val = parseInt(e.target.value) || 0; 
-                                      setReturnedNotes(prev => prev.map((item, idx) => idx === i ? {...item, count: val} : item));
-                                    }} 
-                                  />
+                                  <input type="number" min="0" className="w-20 p-2 border border-gray-300 rounded-lg text-center font-bold outline-none focus:ring-2 focus:ring-brand-500" value={n.count || ''} onChange={e => {const val = parseInt(e.target.value) || 0; setReturnedNotes(prev => prev.map((item, idx) => idx === i ? {...item, count: val} : item));}} />
                                   <span className="w-24 text-right font-bold text-gray-600">{formatCurrency(n.denomination * n.count)}</span>
                               </div>
                           ))}
