@@ -3,12 +3,15 @@ import React, { useState, useEffect } from 'react';
 import { db } from '../services/db';
 import { Product } from '../types';
 import { formatCurrency } from '../services/formatService';
-import { Search, Printer, ListFilter } from 'lucide-react';
+import { Search, FileDown, ListFilter } from 'lucide-react';
+import { downloadPriceListPdf } from '../services/pdfService';
+import { useToast } from './Toast';
 
 const PriceList: React.FC = () => {
   const [products, setProducts] = useState<Product[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('All Categories');
+  const { addToast } = useToast();
 
   useEffect(() => {
     setProducts(db.getProducts());
@@ -22,22 +25,27 @@ const PriceList: React.FC = () => {
     return matchesSearch && matchesCategory;
   });
 
+  const handleDownloadPdf = () => {
+      downloadPriceListPdf(filteredProducts);
+      addToast('Price list PDF generated successfully', 'success');
+  };
+
   return (
     <div className="p-4 lg:p-8 max-w-7xl mx-auto">
       <div className="flex items-center justify-between mb-6">
         <h1 className="text-2xl font-bold text-gray-900">Price List</h1>
         <button
-          onClick={() => window.print()}
-          className="flex items-center gap-2 px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors border border-gray-200"
+          onClick={handleDownloadPdf}
+          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-all shadow-md font-bold uppercase text-[10px] tracking-widest"
         >
-          <Printer className="w-4 h-4" />
-          Print List
+          <FileDown className="w-4 h-4" />
+          Download PDF Catalog
         </button>
       </div>
 
-      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm print:shadow-none print:border-none">
-        {/* Filters - Hidden on Print */}
-        <div className="p-4 border-b border-gray-100 flex gap-4 print:hidden">
+      <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
+        {/* Filters */}
+        <div className="p-4 border-b border-gray-100 flex gap-4">
           <div className="flex items-center bg-gray-50 rounded-lg px-3 py-2 border border-gray-200 flex-1 max-w-md">
             <Search className="w-4 h-4 text-gray-400" />
             <input
@@ -50,7 +58,7 @@ const PriceList: React.FC = () => {
           </div>
           <div className="relative">
              <select
-               className="h-full pl-10 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm appearance-none outline-none cursor-pointer text-gray-700"
+               className="h-full pl-10 pr-8 py-2 bg-gray-50 border border-gray-200 rounded-lg text-sm appearance-none outline-none cursor-pointer text-gray-700 font-bold"
                value={selectedCategory}
                onChange={e => setSelectedCategory(e.target.value)}
              >
@@ -63,41 +71,41 @@ const PriceList: React.FC = () => {
         {/* Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
-            <thead className="bg-gray-50 text-gray-600 font-medium print:bg-gray-100 print:text-black">
+            <thead className="bg-gray-50 text-gray-600 font-medium">
               <tr>
                 <th className="px-6 py-3">Item Name</th>
                 <th className="px-6 py-3">Category</th>
                 <th className="px-6 py-3 text-center">Unit</th>
                 <th className="px-6 py-3 text-center">Stock</th>
-                <th className="px-6 py-3 text-right">Sales Price</th>
+                <th className="px-6 py-3 text-right">Retail Price</th>
                 <th className="px-6 py-3 text-right">Wholesale Price</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {filteredProducts.map((product, idx) => (
-                <tr key={product.id} className="hover:bg-gray-50 group print:border-b print:border-gray-200">
-                  <td className="px-6 py-4 font-medium text-gray-900">
+              {filteredProducts.map((product) => (
+                <tr key={product.id} className="hover:bg-gray-50 group">
+                  <td className="px-6 py-4 font-bold text-gray-900">
                     {product.name}
                   </td>
-                  <td className="px-6 py-4 text-gray-500">
+                  <td className="px-6 py-4 text-gray-500 uppercase text-[10px] font-bold">
                     {product.category || 'General'}
                   </td>
-                  <td className="px-6 py-4 text-center text-gray-500 uppercase text-xs">
+                  <td className="px-6 py-4 text-center text-gray-400 uppercase text-[10px] font-black">
                     {product.unit}
                   </td>
-                  <td className={`px-6 py-4 text-center font-medium ${product.type === 'service' ? 'text-gray-400' : (product.stock < 5 ? 'text-red-500' : 'text-gray-700')}`}>
-                    {product.type === 'service' ? 'N/A' : product.stock}
+                  <td className={`px-6 py-4 text-center font-black ${product.type === 'service' ? 'text-gray-300' : (product.stock < 5 ? 'text-red-500' : 'text-emerald-600')}`}>
+                    {product.type === 'service' ? '-' : product.stock}
                   </td>
-                  <td className="px-6 py-4 text-right font-bold text-gray-800">
+                  <td className="px-6 py-4 text-right font-black text-gray-900">
                     {formatCurrency(product.salePrice)}
                   </td>
-                  <td className="px-6 py-4 text-right font-bold text-blue-600">
+                  <td className="px-6 py-4 text-right font-black text-blue-600">
                     {product.wholesalePrice ? formatCurrency(product.wholesalePrice) : '-'}
                   </td>
                 </tr>
               ))}
               {filteredProducts.length === 0 && (
-                 <tr><td colSpan={6} className="text-center py-8 text-gray-400">No items found matching your filters.</td></tr>
+                 <tr><td colSpan={6} className="text-center py-20 text-gray-400 font-bold uppercase text-xs tracking-widest opacity-30">No items found matching your filters.</td></tr>
               )}
             </tbody>
           </table>

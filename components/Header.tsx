@@ -1,3 +1,4 @@
+
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { 
   Search, 
@@ -5,14 +6,11 @@ import {
   Moon, 
   Sun,
   Menu, 
-  Calculator as CalculatorIcon, 
   ChevronDown,
-  Keyboard,
   X,
   ArrowLeft,
   Building2,
   LogOut,
-  ImageIcon,
   Tag,
   ShoppingCart,
   Receipt,
@@ -25,9 +23,7 @@ import {
 } from 'lucide-react';
 import { db } from '../services/db';
 import { authService } from '../services/authService';
-import { subscriptionService } from '../services/subscriptionService';
 import { useTheme } from './ThemeProvider';
-import Calculator from './Calculator';
 import { formatCurrency } from '../services/formatService';
 import { formatNepaliDate } from '../services/nepaliDateService';
 
@@ -52,9 +48,7 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onNavigate }) => {
   const [searchText, setSearchText] = useState('');
   const [showResults, setShowResults] = useState(false);
   const [highlightedIndex, setHighlightedIndex] = useState(0);
-  const [showCalculator, setShowCalculator] = useState(false);
   const [showProfileMenu, setShowProfileMenu] = useState(false);
-  const [daysRemaining, setDaysRemaining] = useState(0);
   
   const searchWrapperRef = useRef<HTMLDivElement>(null);
   const { theme, toggleTheme } = useTheme();
@@ -63,14 +57,9 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onNavigate }) => {
     const data = db.getBusinessProfile();
     setProfile({ name: data.name || 'AA Pro', logoUrl: data.logoUrl || '' });
     
-    const sub = subscriptionService.getSubscriptionStatus();
-    setDaysRemaining(sub.daysRemaining);
-
     const handleUpdate = () => {
         const data = db.getBusinessProfile();
         setProfile({ name: data.name || 'AA Pro', logoUrl: data.logoUrl || '' });
-        const subUpdate = subscriptionService.getSubscriptionStatus();
-        setDaysRemaining(subUpdate.daysRemaining);
     };
     window.addEventListener('db-updated', handleUpdate);
     return () => window.removeEventListener('db-updated', handleUpdate);
@@ -91,7 +80,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onNavigate }) => {
       const term = searchText.toLowerCase();
       const results: SearchResult[] = [];
 
-      // 1. Search Transactions (Sales, Purchase, Expense)
       db.getTransactions().forEach(t => {
           const matches = t.id.toLowerCase().includes(term) || 
                           t.partyName.toLowerCase().includes(term) || 
@@ -117,7 +105,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onNavigate }) => {
           }
       });
 
-      // 2. Search Service Jobs
       db.getServiceJobs().forEach(j => {
           const matches = j.ticketNumber.toLowerCase().includes(term) || 
                           j.customerName.toLowerCase().includes(term) || 
@@ -134,7 +121,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onNavigate }) => {
           }
       });
 
-      // 3. Search Warranty Returns
       db.getWarrantyCases().forEach(w => {
           const matches = w.ticketNumber.toLowerCase().includes(term) || 
                           w.customerName.toLowerCase().includes(term) || 
@@ -221,7 +207,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onNavigate }) => {
                 onKeyDown={handleKeyDown}
               />
             </div>
-            {/* Mobile Search Results */}
             {showResults && globalResults.length > 0 && (
                 <div className="absolute top-full left-0 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-2xl rounded-b-xl mt-1 max-h-[60vh] overflow-auto z-[60]">
                     {globalResults.map((r, idx) => (
@@ -264,7 +249,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onNavigate }) => {
                 />
                 </div>
                 
-                {/* Global Search Results Dropdown */}
                 {showResults && searchText.trim() && (
                     <div className="absolute top-full left-0 w-full bg-white dark:bg-gray-800 border border-gray-200 dark:border-gray-700 shadow-2xl rounded-2xl mt-2 py-2 z-50 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-200">
                         <div className="px-4 py-2 border-b dark:border-gray-700 flex justify-between items-center">
@@ -299,16 +283,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onNavigate }) => {
                                     </div>
                                 </div>
                             ))}
-                            {globalResults.length === 0 && (
-                                <div className="p-10 text-center flex flex-col items-center gap-3">
-                                    <Search className="w-10 h-10 text-gray-100 dark:text-gray-700" />
-                                    <p className="text-sm text-gray-400 font-bold">No records matched "{searchText}"</p>
-                                </div>
-                            )}
-                        </div>
-                        <div className="px-4 py-2 bg-gray-50 dark:bg-gray-900/50 text-[9px] text-gray-400 font-bold uppercase flex justify-between items-center tracking-tighter">
-                            <span>Use Arrow Keys to select</span>
-                            <span>Esc to close</span>
                         </div>
                     </div>
                 )}
@@ -316,15 +290,6 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onNavigate }) => {
           </div>
 
           <div className="flex items-center gap-1 sm:gap-4">
-            
-            {/* Subscription Indicator */}
-            <div className={`hidden lg:flex items-center gap-2 px-3 py-1.5 rounded-full border ${daysRemaining < 15 ? 'bg-red-50 border-red-100 text-red-600' : 'bg-brand-50 border-brand-100 text-brand-600'}`}>
-                {daysRemaining < 15 ? <AlertTriangle className="w-3.5 h-3.5" /> : <ShieldCheck className="w-3.5 h-3.5" />}
-                <span className="text-[10px] font-black uppercase tracking-tight">
-                    {daysRemaining} Days Left
-                </span>
-            </div>
-
             <button 
               onClick={() => setShowMobileSearch(true)}
               className="md:hidden p-2 text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg"

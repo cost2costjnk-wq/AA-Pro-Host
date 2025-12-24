@@ -20,21 +20,18 @@ import WarrantyManager from './components/WarrantyManager';
 import CashDrawerManager from './components/CashDrawer';
 import LoginPage from './components/LoginPage';
 import ShortcutGuide from './components/ShortcutGuide';
-import ActivationPage from './components/ActivationPage';
 import AdminDashboard from './components/AdminDashboard';
 import AIAssistant from './components/AIAssistant';
 import { Transaction, TransactionItem } from './types';
 import { db } from './services/db';
 import { authService } from './services/authService';
 import { autoBackupService } from './services/autoBackupService';
-import { subscriptionService } from './services/subscriptionService';
 import { Loader2, RefreshCw, X, Database, ShieldAlert } from 'lucide-react';
 import { useToast } from './components/Toast';
 
 const App: React.FC = () => {
   const [isDbReady, setIsDbReady] = useState(false);
   const [isLoggedIn, setIsLoggedIn] = useState(authService.isAuthenticated());
-  const [isSubscribed, setIsSubscribed] = useState(false);
   const [companySelected, setCompanySelected] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
@@ -49,11 +46,6 @@ const App: React.FC = () => {
 
   const { addToast } = useToast();
   const isSuper = authService.isSuperAdmin();
-
-  const checkSubscription = () => {
-    const status = subscriptionService.getSubscriptionStatus();
-    setIsSubscribed(status.isSubscribed);
-  };
 
   const setRoleBasedInitialTab = () => {
       const currentTab = activeTab;
@@ -94,7 +86,6 @@ const App: React.FC = () => {
         if (db.getActiveCompanyId()) {
            setCompanySelected(true);
            setIsDbReady(true);
-           checkSubscription();
            autoBackupService.start();
            setRoleBasedInitialTab();
         } else {
@@ -111,7 +102,6 @@ const App: React.FC = () => {
 
     const handleUpdate = () => {
         setRefreshKey(prev => prev + 1);
-        if (isLoggedIn) checkSubscription();
     };
     const handleLogout = () => { 
         setCompanySelected(false); 
@@ -132,9 +122,8 @@ const App: React.FC = () => {
     }
   }, [isLoggedIn]);
 
-  // Keyboard Shortcuts Listener
   useEffect(() => {
-    if (!isSubscribed || isSuper || !isLoggedIn) return;
+    if (isSuper || !isLoggedIn) return;
 
     const handleGlobalShortcuts = (e: KeyboardEvent) => {
       if (e.altKey) {
@@ -174,7 +163,7 @@ const App: React.FC = () => {
 
     window.addEventListener('keydown', handleGlobalShortcuts);
     return () => window.removeEventListener('keydown', handleGlobalShortcuts);
-  }, [isSubscribed, isSuper, isLoggedIn]);
+  }, [isSuper, isLoggedIn]);
 
   const handlePerformSync = async () => {
     if (!detectedBackup) return;
@@ -206,7 +195,7 @@ const App: React.FC = () => {
 
   const handleAutoOrderConvert = (items: TransactionItem[]) => {
       setEditingTransaction({
-          id: '', // Will be auto-generated in PosForm
+          id: '',
           date: new Date().toISOString(),
           type: 'PURCHASE',
           partyId: '',
@@ -255,19 +244,18 @@ const App: React.FC = () => {
       case 'reports': return <Reports onEditTransaction={handleEdit} />;
       case 'purchase-auto-order': return <Reports targetReport="OUT_OF_STOCK" onConsumeTarget={() => {}} onEditTransaction={handleEdit} onConvertToPurchase={handleAutoOrderConvert} />;
       case 'receivable-aging': return <Reports targetReport="RECEIVABLE_AGING" onConsumeTarget={() => {}} onEditTransaction={handleEdit} />;
+      case 'admin-dashboard': return <AdminDashboard />;
       default: return <Dashboard onNavigate={setActiveTab} />;
     }
   };
 
-  if (!isLoggedIn) return <LoginPage onLoginSuccess={() => setIsLoggedIn(true)} />;
+  if (!isLoggedIn) return <LoginPage onLoginSuccess={() => window.location.reload()} />;
   if (!isDbReady) return <div className="flex h-screen items-center justify-center bg-gray-50"><Loader2 className="w-10 h-10 animate-spin text-brand-500" /></div>;
   
   if (isSuper) return <AdminDashboard />;
 
   if (!companySelected) return <CompanySelector onSelect={() => setCompanySelected(true)} />;
   
-  if (!isSubscribed) return <ActivationPage onActivated={() => setIsSubscribed(true)} />;
-
   return (
     <div className="flex h-screen bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 overflow-hidden font-sans">
       <Sidebar isOpen={sidebarOpen} activeTab={activeTab} setActiveTab={setActiveTab} onClose={() => setSidebarOpen(false)} />

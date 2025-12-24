@@ -16,6 +16,8 @@
     "@google/genai": "^1.31.0",
     "gh-pages": "^6.3.0",
     "idb": "8.0.0",
+    "jspdf": "2.5.1",
+    "jspdf-autotable": "3.8.2",
     "lucide-react": "^0.556.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",

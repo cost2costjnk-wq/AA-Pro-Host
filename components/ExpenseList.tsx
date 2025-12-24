@@ -5,7 +5,9 @@ import { Transaction } from '../types';
 import { formatCurrency } from '../services/formatService';
 import { formatNepaliDate } from '../services/nepaliDateService';
 import NepaliDatePicker from './NepaliDatePicker';
-import { Plus, Search, Calendar, Filter, X, Trash2, Pencil, ChevronDown, ArrowUpDown } from 'lucide-react';
+import { Plus, Search, Calendar, Filter, X, Trash2, Pencil, ChevronDown, ArrowUpDown, FileDown } from 'lucide-react';
+import { downloadTransactionPdf } from '../services/pdfService';
+import { useToast } from './Toast';
 
 interface ExpenseListProps {
   onNew: () => void;
@@ -26,6 +28,8 @@ const ExpenseList: React.FC<ExpenseListProps> = ({ onNew, refreshKey, onEdit }) 
   // Derived lists for dropdowns
   const [categories, setCategories] = useState<string[]>([]);
   const [paymentModes, setPaymentModes] = useState<string[]>([]);
+
+  const { addToast } = useToast();
 
   useEffect(() => {
     loadData();
@@ -72,8 +76,6 @@ const ExpenseList: React.FC<ExpenseListProps> = ({ onNew, refreshKey, onEdit }) 
 
     // 4. Date Filter
     if (date) {
-      // Compare dates (assuming ISO string comparison works for exact day matching logic or normalize)
-      // Normalizing to YYYY-MM-DD for comparison
       const filterDate = date.split('T')[0];
       result = result.filter(t => t.date.split('T')[0] === filterDate);
     }
@@ -84,8 +86,13 @@ const ExpenseList: React.FC<ExpenseListProps> = ({ onNew, refreshKey, onEdit }) 
   const handleDelete = (id: string) => {
     if (window.confirm('Are you sure you want to delete this expense?')) {
       db.deleteTransaction(id);
-      loadData(); // Re-fetch
+      loadData();
     }
+  };
+
+  const handleDownloadPdf = (exp: Transaction) => {
+      downloadTransactionPdf(exp);
+      addToast('Expense voucher PDF generated', 'success');
   };
 
   const handleClearFilters = () => {
@@ -124,7 +131,6 @@ const ExpenseList: React.FC<ExpenseListProps> = ({ onNew, refreshKey, onEdit }) 
         </div>
 
         <div className="flex flex-wrap gap-2 items-center">
-            {/* Category Dropdown */}
             <div className="relative">
               <select 
                 className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-3 pr-8 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer"
@@ -136,7 +142,6 @@ const ExpenseList: React.FC<ExpenseListProps> = ({ onNew, refreshKey, onEdit }) 
               <ChevronDown className="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
 
-            {/* Payment Mode Dropdown */}
             <div className="relative">
               <select 
                 className="appearance-none bg-white border border-gray-200 text-gray-700 py-2 pl-3 pr-8 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-emerald-500 shadow-sm cursor-pointer"
@@ -148,7 +153,6 @@ const ExpenseList: React.FC<ExpenseListProps> = ({ onNew, refreshKey, onEdit }) 
               <ChevronDown className="w-4 h-4 text-gray-400 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none" />
             </div>
 
-            {/* Date Picker */}
             <div className="w-40">
                 <NepaliDatePicker 
                     value={date} 
@@ -168,16 +172,8 @@ const ExpenseList: React.FC<ExpenseListProps> = ({ onNew, refreshKey, onEdit }) 
                 </button>
             )}
         </div>
-
-        <div className="lg:ml-auto">
-             <button className="flex items-center gap-2 px-3 py-2 bg-white border border-gray-200 rounded-lg text-sm text-gray-700 hover:bg-gray-50 shadow-sm">
-                <ArrowUpDown className="w-4 h-4" />
-                Sort By
-             </button>
-        </div>
       </div>
 
-      {/* Table */}
       <div className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-sm">
         <div className="overflow-x-auto">
           <table className="w-full text-sm text-left">
@@ -187,9 +183,9 @@ const ExpenseList: React.FC<ExpenseListProps> = ({ onNew, refreshKey, onEdit }) 
                 <th className="px-6 py-4">Category</th>
                 <th className="px-6 py-4">Date</th>
                 <th className="px-6 py-4">Payment Mode</th>
-                <th className="px-6 py-4">Total Amount</th>
+                <th className="px-6 py-4 text-right">Total Amount</th>
                 <th className="px-6 py-4">Remarks</th>
-                <th className="px-6 py-4">Action</th>
+                <th className="px-6 py-4 text-center">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
@@ -207,39 +203,23 @@ const ExpenseList: React.FC<ExpenseListProps> = ({ onNew, refreshKey, onEdit }) 
                   <td className="px-6 py-4 text-gray-600">
                       {expense.paymentMode || 'Cash'}
                   </td>
-                  <td className="px-6 py-4 text-gray-900 font-bold">
+                  <td className="px-6 py-4 text-gray-900 font-bold text-right">
                       {formatCurrency(expense.totalAmount)}
                   </td>
                   <td className="px-6 py-4 text-gray-500 max-w-xs truncate" title={expense.notes}>
                       {expense.notes || '--'}
                   </td>
                   <td className="px-6 py-4">
-                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button 
-                        onClick={() => onEdit(expense)}
-                        className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                        title="Edit"
-                      >
-                        <Pencil className="w-4 h-4" />
+                    <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button onClick={() => handleDownloadPdf(expense)} className="p-1.5 text-gray-400 hover:text-emerald-600" title="Download Voucher PDF">
+                        <FileDown className="w-4 h-4" />
                       </button>
-                      <button 
-                        onClick={() => handleDelete(expense.id)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                        title="Delete"
-                      >
-                        <Trash2 className="w-4 h-4" />
-                      </button>
+                      <button onClick={() => onEdit(expense)} className="p-1.5 text-gray-400 hover:text-blue-600"><Pencil className="w-4 h-4" /></button>
+                      <button onClick={() => handleDelete(expense.id)} className="p-1.5 text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
                     </div>
                   </td>
                 </tr>
               ))}
-              {filteredExpenses.length === 0 && (
-                 <tr>
-                    <td colSpan={7} className="text-center py-12 text-gray-400 bg-gray-50/50">
-                        No expenses found matching your criteria.
-                    </td>
-                 </tr>
-              )}
             </tbody>
           </table>
         </div>

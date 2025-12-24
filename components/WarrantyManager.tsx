@@ -1,11 +1,13 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { WarrantyCase, Product, Party, WarrantyItem } from '../types';
 import { formatCurrency } from '../services/formatService';
 import { formatNepaliDate } from '../services/nepaliDateService';
-import { RotateCcw, Plus, Search, Pencil, Trash2, CheckCircle, Clock, X, ChevronDown, User, Package, AlertCircle, Calendar, Truck } from 'lucide-react';
+import { RotateCcw, Plus, Search, Pencil, Trash2, CheckCircle, Clock, X, ChevronDown, User, Package, AlertCircle, Calendar, Truck, FileDown } from 'lucide-react';
 import { useToast } from './Toast';
 import NepaliDatePicker from './NepaliDatePicker';
+import { downloadWarrantyPdf } from '../services/pdfService';
 
 const WarrantyManager: React.FC = () => {
     const [cases, setCases] = useState<WarrantyCase[]>([]);
@@ -25,6 +27,11 @@ const WarrantyManager: React.FC = () => {
             setCases(db.getWarrantyCases());
             addToast('Warranty case removed', 'success');
         }
+    };
+
+    const handleDownloadPdf = (wCase: WarrantyCase) => {
+        downloadWarrantyPdf(wCase);
+        addToast('Warranty ticket generated', 'success');
     };
 
     const handleSave = () => {
@@ -96,6 +103,9 @@ const WarrantyManager: React.FC = () => {
                                     </td>
                                     <td className="px-6 py-4 text-center">
                                         <div className="flex items-center justify-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button onClick={() => handleDownloadPdf(wc)} className="p-1.5 text-gray-400 hover:text-emerald-600" title="Download Claim PDF">
+                                                <FileDown className="w-4 h-4" />
+                                            </button>
                                             <button onClick={() => { setEditingCase(wc); setShowModal(true); }} className="p-1.5 text-gray-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg">
                                                 <Pencil className="w-4 h-4" />
                                             </button>
@@ -237,7 +247,6 @@ const WarrantyFormModal: React.FC<{ initialData: WarrantyCase | null, onClose: (
                                                     <span className="text-[9px] bg-gray-100 px-1.5 py-0.5 rounded text-gray-500">STOCK: {p.stock}</span>
                                                 </div>
                                             ))}
-                                            {filteredProducts.length === 0 && <div className="p-4 text-center text-gray-400 italic">No item found.</div>}
                                         </div>
                                     )}
                                 </div>

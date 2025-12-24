@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useRef } from 'react';
 import { db } from '../services/db';
 import { Party, Product, Transaction, TransactionItem, Account, CashNoteCount, Denomination, CashDrawer } from '../types';
@@ -315,7 +316,6 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
     item.productName = product.name; 
     item.unit = product.unit; 
     
-    // Preserve existing quantity if it was already typed, else leave it empty for manual entry
     if (item.quantity === '') {
         item.quantity = '';
     }
@@ -328,7 +328,6 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
     setProductSearchTerm(''); 
     setShowProductDropdown(false); 
     
-    // Move to quantity field
     focusField(index, 'quantity');
   };
 
@@ -660,12 +659,11 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
                                           <div 
                                             key={p.id} 
                                             data-index={idx}
-                                            /* Corrected comparison from index (row index) to idx (dropdown list index) */
                                             className={`p-2.5 border-b border-gray-50 last:border-0 cursor-pointer flex justify-between items-center group ${highlightedProductIndex === idx ? 'bg-blue-100 text-blue-900' : 'hover:bg-blue-50'}`} 
                                             onClick={() => handleProductSelect(index, p)}
                                           >
                                              <div><div className="font-bold text-gray-800 text-sm">{p.name}</div><div className="text-[10px] text-gray-500 flex gap-2 mt-0.5"><span>Stock: {p.stock} {p.unit}</span></div></div>
-                                             {/* Fixed: replace "product" (undefined) with "p" (local iterator variable) */}
+                                             {/* Fixed undefined product error below by using iteration variable p instead of undefined name product */}
                                              <div className="text-right font-bold text-brand-600 text-sm">{formatCurrency(isPurchase ? p.purchasePrice : (pricingMode === 'wholesale' ? (p.wholesalePrice || p.salePrice) : (pricingMode === 'cost' ? p.purchasePrice : p.salePrice)))}</div>
                                           </div>
                                     ))}
@@ -704,6 +702,166 @@ const PosForm: React.FC<PosFormProps> = ({ type, initialData, onClose, onSave })
             </div>
          </div>
       </div>
+
+      {showCashModal && (
+          <div className="fixed inset-0 z-[70] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+              <div className="bg-white rounded-3xl w-full max-w-4xl shadow-2xl flex flex-col max-h-[90vh] overflow-hidden animate-in zoom-in-95 duration-200">
+                  <div className="bg-brand-600 p-8 text-white flex justify-between items-center relative overflow-hidden">
+                      <div className="relative z-10">
+                        <h3 className="text-2xl font-black flex items-center gap-3 uppercase tracking-tight"><Banknote className="w-8 h-8" /> Cash Note Breakdown</h3>
+                        <p className="text-brand-100 text-xs font-bold mt-1 uppercase tracking-widest">Verify physical notes in and out of the drawer</p>
+                      </div>
+                      <button onClick={() => setShowCashModal(false)} className="relative z-10 p-2 hover:bg-white/20 rounded-full transition-colors"><X className="w-8 h-8" /></button>
+                      <Banknote className="absolute top-0 right-0 w-32 h-32 opacity-10 -mr-8 -mt-8 rotate-12" />
+                  </div>
+                  
+                  <div className="flex-1 overflow-y-auto p-8 grid grid-cols-1 md:grid-cols-2 gap-12 bg-gray-50/50">
+                      <div className="space-y-6">
+                          <div className="flex items-center justify-between border-b-2 border-emerald-100 pb-3">
+                              <h4 className="font-black text-emerald-900 text-xs uppercase tracking-[0.2em] flex items-center gap-2">
+                                <span className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></span>
+                                Notes Received (In)
+                              </h4>
+                              <span className="font-black text-emerald-600 text-xl">{formatCurrency(receivedSum)}</span>
+                          </div>
+                          <div className="space-y-2">
+                            {receivedNotes.map((n, i) => (
+                                <div key={n.denomination} className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${n.count > 0 ? 'bg-white border-emerald-200 shadow-sm' : 'bg-transparent border-gray-100'}`}>
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-12 h-8 rounded-lg flex items-center justify-center font-black text-xs ${n.denomination >= 500 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{n.denomination}</div>
+                                      <X className="w-3 h-3 text-gray-300" />
+                                    </div>
+                                    <input type="number" min="0" className="w-20 p-2 bg-gray-50 border border-gray-200 rounded-xl text-center font-black outline-none focus:ring-2 focus:ring-brand-500" value={n.count || ''} onChange={e => {const val = parseInt(e.target.value) || 0; setReceivedNotes(prev => prev.map((item, idx) => idx === i ? {...item, count: val} : item));}} />
+                                    <span className="w-28 text-right font-bold text-gray-500">{formatCurrency(n.denomination * n.count)}</span>
+                                </div>
+                            ))}
+                          </div>
+                      </div>
+
+                      <div className="space-y-6">
+                          <div className="flex items-center justify-between border-b-2 border-red-100 pb-3">
+                              <h4 className="font-black text-red-900 text-xs uppercase tracking-[0.2em] flex items-center gap-2">
+                                <span className="w-2 h-2 bg-red-500 rounded-full"></span>
+                                Notes Returned (Out)
+                              </h4>
+                              <div className="flex items-center gap-4">
+                                <button type="button" onClick={handleAutoSuggestChange} className="text-[10px] bg-white text-brand-600 px-3 py-1.5 rounded-full font-black border border-brand-100 shadow-sm flex items-center gap-1.5 hover:bg-brand-50 transition-all uppercase tracking-tighter"><Sparkles className="w-3 h-3" /> Suggest Change</button>
+                                <span className="font-black text-red-600 text-xl">{formatCurrency(returnedSum)}</span>
+                              </div>
+                          </div>
+                          <div className="space-y-2">
+                            {returnedNotes.map((n, i) => (
+                                <div key={n.denomination} className={`flex items-center justify-between p-3 rounded-2xl border transition-all ${n.count > 0 ? 'bg-white border-red-200 shadow-sm' : 'bg-transparent border-gray-100'}`}>
+                                    <div className="flex items-center gap-3">
+                                      <div className={`w-12 h-8 rounded-lg flex items-center justify-center font-black text-xs ${n.denomination >= 500 ? 'bg-red-50 text-red-700' : 'bg-emerald-50 text-emerald-700'}`}>{n.denomination}</div>
+                                      <X className="w-3 h-3 text-gray-300" />
+                                    </div>
+                                    <input type="number" min="0" className="w-20 p-2 bg-gray-50 border border-gray-200 rounded-xl text-center font-black outline-none focus:ring-2 focus:ring-brand-500" value={n.count || ''} onChange={e => {const val = parseInt(e.target.value) || 0; setReturnedNotes(prev => prev.map((item, idx) => idx === i ? {...item, count: val} : item));}} />
+                                    <span className="w-28 text-right font-bold text-gray-500">{formatCurrency(n.denomination * n.count)}</span>
+                                </div>
+                            ))}
+                          </div>
+                      </div>
+                  </div>
+
+                  <div className="p-8 border-t bg-white flex flex-col sm:flex-row justify-between items-center gap-6">
+                      <div className="flex gap-10">
+                          <div className="text-center sm:text-left">
+                              <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1">Bill Amount</p>
+                              <div className="text-2xl font-black text-gray-900">{formatCurrency(grandTotal)}</div>
+                          </div>
+                          <div className="text-center sm:text-left border-l border-gray-100 pl-10">
+                              <p className="text-[10px] text-gray-400 uppercase font-black tracking-widest mb-1">Physical Value</p>
+                              <div className={`text-2xl font-black ${Math.abs(receivedSum - returnedSum - grandTotal) < 0.1 ? 'text-emerald-600' : 'text-orange-500'}`}>
+                                {formatCurrency(receivedSum - returnedSum)}
+                              </div>
+                          </div>
+                      </div>
+                      <button type="button" onClick={() => setShowCashModal(false)} className="w-full sm:w-auto px-12 py-4 bg-brand-600 text-white rounded-2xl font-black uppercase text-xs tracking-[0.2em] shadow-xl shadow-brand-500/30 hover:bg-brand-700 transition-all active:scale-95 flex items-center justify-center gap-2">
+                        <Check className="w-4 h-4" /> Finalize Breakdown
+                      </button>
+                  </div>
+              </div>
+          </div>
+      )}
+
+      {showAddPartyModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+             <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4">
+                <div className="p-6 border-b flex justify-between items-center bg-gray-50">
+                    <h3 className="font-bold text-gray-800">Quick Add Party</h3>
+                    <button onClick={() => setShowAddPartyModal(false)}><X className="w-6 h-6 text-gray-400" /></button>
+                </div>
+                <div className="p-6 space-y-4">
+                    <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Name</label><input className="w-full p-2.5 bg-gray-50 border rounded-xl outline-none" value={quickParty.name} onChange={e => setQuickParty({...quickParty, name: e.target.value})} /></div>
+                    <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Phone</label><input className="w-full p-2.5 bg-gray-50 border rounded-xl outline-none" value={quickParty.phone} onChange={e => setQuickParty({...quickParty, phone: e.target.value})} /></div>
+                    <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Address</label><input className="w-full p-2.5 bg-gray-50 border rounded-xl outline-none" value={quickParty.address} onChange={e => setQuickParty({...quickParty, address: e.target.value})} /></div>
+                    <button onClick={handleSaveQuickParty} className="w-full py-3 bg-brand-600 text-white rounded-xl font-bold uppercase text-xs tracking-widest mt-2">Save Party</button>
+                </div>
+             </div>
+          </div>
+      )}
+
+      {showAddProductModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+             <div className="bg-white rounded-3xl w-full max-w-md shadow-2xl overflow-hidden animate-in slide-in-from-bottom-4">
+                <div className="p-6 border-b flex justify-between items-center bg-gray-50">
+                    <h3 className="font-bold text-gray-800">Quick Add Product</h3>
+                    <button onClick={() => setShowAddProductModal(false)}><X className="w-6 h-6 text-gray-400" /></button>
+                </div>
+                <form onSubmit={handleSaveQuickProduct} className="p-6 space-y-4">
+                    <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Item Name</label><input required autoFocus className="w-full p-2.5 bg-gray-50 border rounded-xl outline-none" value={quickProduct.name} onChange={e => setQuickProduct({...quickProduct, name: e.target.value})} /></div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Unit</label><input className="w-full p-2.5 bg-gray-50 border rounded-xl outline-none" value={quickProduct.unit} onChange={e => setQuickProduct({...quickProduct, unit: e.target.value})} /></div>
+                        <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Stock</label><input type="number" className="w-full p-2.5 bg-gray-50 border rounded-xl outline-none" value={quickProduct.stock} onChange={e => setQuickProduct({...quickProduct, stock: Number(e.target.value)})} /></div>
+                    </div>
+                    <div className="grid grid-cols-2 gap-4">
+                        <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Buy Price</label><input type="number" className="w-full p-2.5 bg-gray-50 border rounded-xl outline-none" value={quickProduct.purchasePrice} onChange={e => setQuickProduct({...quickProduct, purchasePrice: Number(e.target.value)})} /></div>
+                        <div><label className="block text-xs font-bold text-gray-500 uppercase mb-1">Sale Price</label><input type="number" className="w-full p-2.5 bg-brand-50 border-brand-200 border rounded-xl outline-none font-bold text-brand-700" value={quickProduct.salePrice} onChange={e => setQuickProduct({...quickProduct, salePrice: Number(e.target.value)})} /></div>
+                    </div>
+                    <button type="submit" className="w-full py-3 bg-brand-600 text-white rounded-xl font-bold uppercase text-xs tracking-widest mt-2">Create & Select Item</button>
+                </form>
+             </div>
+          </div>
+      )}
+
+      {showPriceUpdateModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm">
+             <div className="bg-white rounded-3xl w-full max-w-xl shadow-2xl overflow-hidden">
+                <div className="p-6 bg-orange-50 border-b border-orange-100 flex justify-between items-center">
+                    <div className="flex items-center gap-3">
+                        <AlertCircle className="w-6 h-6 text-orange-600" />
+                        <h3 className="font-bold text-orange-900">Purchase Price Alert</h3>
+                    </div>
+                </div>
+                <div className="p-6 space-y-4">
+                    <p className="text-sm text-gray-600">The following items have a higher purchase rate than your master records. Should we update the master prices?</p>
+                    <div className="space-y-3 max-h-60 overflow-auto">
+                        {itemsToUpdatePrices.map(item => (
+                            <div key={item.productId} className="p-3 bg-gray-50 rounded-xl border flex flex-col gap-2">
+                                <div className="font-bold text-gray-800 text-sm">{item.productName}</div>
+                                <div className="grid grid-cols-2 gap-4">
+                                    <div className="text-xs">
+                                        <span className="text-gray-400 block uppercase">Old Master Cost</span>
+                                        <span className="font-bold line-through text-gray-500">{formatCurrency(item.oldPurchasePrice)}</span>
+                                    </div>
+                                    <div className="text-xs">
+                                        <span className="text-orange-600 block uppercase font-bold">New Purchase Cost</span>
+                                        <span className="font-black text-orange-700">{formatCurrency(item.newPurchasePrice)}</span>
+                                    </div>
+                                </div>
+                            </div>
+                        ))}
+                    </div>
+                    <div className="flex gap-3 pt-2">
+                        <button onClick={() => handleFinalSave(true)} className="flex-1 py-3 text-gray-500 font-bold text-xs uppercase hover:bg-gray-100 rounded-xl">Skip Update</button>
+                        <button onClick={handleApplyPriceUpdates} className="flex-1 py-3 bg-brand-600 text-white font-bold text-xs uppercase rounded-xl shadow-lg shadow-brand-500/20">Update Master Prices & Save</button>
+                    </div>
+                </div>
+             </div>
+          </div>
+      )}
+
     </div>
   );
 };

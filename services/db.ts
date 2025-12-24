@@ -1,4 +1,3 @@
-
 import { openDB, IDBPDatabase } from 'idb';
 import { 
   Company, BusinessProfile, DatabaseConfig, CloudConfig, 
@@ -141,7 +140,6 @@ export class DatabaseService {
     const db = await this.initDb();
     const stored = await db.get(DATA_STORE, companyId);
     
-    // Load Global Subscription Info separately to ensure it persists across company changes
     this.globalSubInfo = await db.get(GLOBAL_CONFIG_STORE, 'subscription_info');
 
     if (stored) {
@@ -173,7 +171,6 @@ export class DatabaseService {
     window.dispatchEvent(new Event('db-content-changed'));
   }
 
-  // --- Global Admin License Methods ---
   async getGlobalIssuedLicenses(): Promise<IssuedLicense[]> {
     const db = await this.initDb();
     return (await db.get(GLOBAL_CONFIG_STORE, 'issued_licenses')) || [];
@@ -193,7 +190,6 @@ export class DatabaseService {
     await db.put(GLOBAL_CONFIG_STORE, filtered, 'issued_licenses');
   }
 
-  // --- User Management ---
   getUsers() { return this.cache.users || []; }
   addUser(u: User) { this.cache.users.push(u); this.persist(); }
   updateUser(u: User) {
@@ -205,7 +201,6 @@ export class DatabaseService {
     this.persist();
   }
 
-  // --- Financial Year Closing Logic ---
   async closeAndStartNewYear(nextYearName: string) {
     if (!this.activeCompanyId) return { success: false, message: 'No active session' };
 
@@ -269,12 +264,10 @@ export class DatabaseService {
   getCashDrawer(): CashDrawer { return this.cache.cashDrawer || JSON.parse(JSON.stringify(DEFAULT_CASH_DRAWER)); }
   updateCashDrawer(drawer: CashDrawer) { this.cache.cashDrawer = drawer; this.persist(); }
 
-  // Fixed: Get Subscription info from global config store, not company cache
   getSubscriptionInfo(): SubscriptionInfo | undefined { 
     return this.globalSubInfo; 
   }
 
-  // Fixed: Save Subscription info to global config store
   async updateSubscriptionInfo(s: SubscriptionInfo) { 
     const db = await this.initDb();
     this.globalSubInfo = s;
@@ -337,6 +330,7 @@ export class DatabaseService {
   }
 
   private applyImpact(t: Transaction, factor: number) {
+     // 1. Party Balance Impact
      if (t.partyId) {
         const party = this.cache.parties.find(p => p.id === t.partyId);
         if (party) {
@@ -353,6 +347,8 @@ export class DatabaseService {
             party.balance += (amt * factor);
         }
      }
+
+     // 2. Inventory Stock Impact
      t.items?.forEach(item => {
         const p = this.cache.products.find(prod => prod.id === item.productId);
         if (p && p.type !== 'service') {
@@ -360,6 +356,8 @@ export class DatabaseService {
             else if (t.type === 'PURCHASE' || t.type === 'SALE_RETURN') p.stock += (item.quantity * factor);
         }
      });
+
+     // 3. Account Balance Impact
      if (t.accountId) {
         const acc = this.cache.accounts.find(a => a.id === t.accountId);
         if (acc) {
@@ -367,6 +365,26 @@ export class DatabaseService {
             if (t.type === 'BALANCE_ADJUSTMENT') amt = t.totalAmount;
             acc.balance += (amt * factor);
         }
+     }
+
+     // 4. Physical Cash Drawer Synchronization (FIX: Updates Virtual Physical Note Counts)
+     if (t.cashBreakdown) {
+         const drawer = this.getCashDrawer();
+         
+         // Add received notes to drawer
+         t.cashBreakdown.received.forEach(rn => {
+             const note = drawer.notes.find(dn => dn.denomination === rn.denomination);
+             if (note) note.count += (rn.count * factor);
+         });
+
+         // Remove returned notes from drawer
+         t.cashBreakdown.returned.forEach(rn => {
+            const note = drawer.notes.find(dn => dn.denomination === rn.denomination);
+            if (note) note.count -= (rn.count * factor);
+         });
+
+         drawer.lastUpdated = new Date().toISOString();
+         this.cache.cashDrawer = drawer;
      }
   }
 
@@ -410,9 +428,6 @@ export class DatabaseService {
      if (!data || typeof data !== 'object') return { success: false, message: 'Invalid data format' };
      const defaults = getInitialCompanyData();
      
-     // Note: We deliberately do NOT overwrite subscriptionInfo from the restored file
-     // so that the local machine activation remains primary.
-     
      this.cache = {
          ...defaults,
          ...data,
@@ -421,6 +436,7 @@ export class DatabaseService {
          cashDrawer: {
             ...defaults.cashDrawer,
             ...(data.cashDrawer || {}),
+            // Fix: Changed 'stored' to 'data' because 'stored' is not defined in this scope.
             notes: (data.cashDrawer?.notes && Array.isArray(data.cashDrawer.notes)) ? data.cashDrawer.notes : defaults.cashDrawer.notes
          },
          serviceJobs: data.serviceJobs || [],

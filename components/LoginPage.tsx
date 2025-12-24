@@ -1,7 +1,7 @@
 
 import React, { useState } from 'react';
 import { authService } from '../services/authService';
-import { ShoppingBag, Mail, Lock, LogIn, Loader2, AlertCircle, RefreshCw, HelpCircle } from 'lucide-react';
+import { ShoppingBag, Mail, Lock, LogIn, Loader2, AlertCircle, HelpCircle } from 'lucide-react';
 
 interface LoginPageProps {
   onLoginSuccess: () => void;
@@ -15,28 +15,33 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (isLoading) return;
+    
     setIsLoading(true);
     setError('');
 
     try {
       const success = await authService.login(email, password);
       if (success) {
-        onLoginSuccess();
+        // Using window.location.reload() to ensure clean state initialization
+        // This is safer than just updating a React state variable in complex apps
+        window.location.reload();
       } else {
-        setError('Invalid email or password. Please try again.');
+        setError('Invalid email or password. Please check your credentials.');
         setIsLoading(false);
       }
     } catch (err) {
-      setError('System authentication error. Please try again.');
+      console.error("Login component error:", err);
+      setError('Connection or system error. Please refresh and try again.');
       setIsLoading(false);
     }
   };
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-900 p-4 font-sans transition-colors duration-200">
-      <div className="w-full max-w-md">
+      <div className="w-full max-w-md animate-in fade-in zoom-in-95 duration-500">
         <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-20 h-20 bg-brand-500 rounded-3xl shadow-xl shadow-brand-500/20 mb-6 transform hover:rotate-12 transition-transform duration-300">
+          <div className="inline-flex items-center justify-center w-20 h-20 bg-brand-500 rounded-3xl shadow-xl shadow-brand-500/20 mb-6 transform hover:rotate-6 transition-transform duration-300">
             <ShoppingBag className="w-10 h-10 text-white" />
           </div>
           <h1 className="text-4xl font-black text-gray-900 dark:text-white uppercase tracking-tighter">AA Pro</h1>
@@ -84,7 +89,7 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
               </div>
 
               {error && (
-                <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30 p-4 rounded-2xl flex items-center gap-3 text-red-600 dark:text-red-400 text-sm font-bold animate-shake">
+                <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-800/30 p-4 rounded-2xl flex items-center gap-3 text-red-600 dark:text-red-400 text-sm font-bold animate-in slide-in-from-bottom-2">
                   <AlertCircle className="w-5 h-5 shrink-0" />
                   {error}
                 </div>
@@ -110,21 +115,10 @@ const LoginPage: React.FC<LoginPageProps> = ({ onLoginSuccess }) => {
           <div className="bg-gray-50 dark:bg-gray-700/50 p-6 border-t border-gray-100 dark:border-gray-600 flex justify-between items-center px-10">
              <div className="flex items-center gap-2 text-gray-400 group cursor-help">
                 <HelpCircle className="w-4 h-4" />
-                <span className="text-[10px] font-bold uppercase tracking-widest">Help Desk</span>
+                <span className="text-[10px] font-bold uppercase tracking-widest">Authorized Access</span>
              </div>
-             <div className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">SECURE_NODE: 127.0.0.1</div>
+             <div className="text-[10px] text-gray-400 dark:text-gray-500 font-mono">NODE_SIG: {localStorage.getItem('aapro_device_sig')?.slice(-8)}</div>
           </div>
-        </div>
-
-        <div className="flex justify-center gap-6 mt-8">
-            <button className="flex items-center gap-2 text-[10px] font-black text-gray-400 dark:text-gray-600 uppercase tracking-widest hover:text-brand-500 transition-colors">
-                <RefreshCw className="w-3 h-3" />
-                Restore System
-            </button>
-            <div className="w-px h-3 bg-gray-200 dark:bg-gray-800"></div>
-            <p className="text-[10px] font-black text-gray-400 dark:text-gray-600 uppercase tracking-widest">
-                Build v2.7.1-IDB
-            </p>
         </div>
       </div>
     </div>

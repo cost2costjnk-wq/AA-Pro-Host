@@ -31,6 +31,7 @@ export interface Reminder {
 
 // User & Permissions
 export type UserRole = 'ADMIN' | 'SALESMAN' | 'ACCOUNTANT' | 'DATA_ENTRY' | 'SUPER_ADMIN';
+export type ActionLevel = 'view' | 'edit' | 'delete';
 
 export interface User {
   id: string;
@@ -38,7 +39,7 @@ export interface User {
   email: string;
   password: string;
   role: UserRole;
-  permissions: string[]; // Granular module access
+  permissions: string[]; // Format: 'moduleId:action' (e.g., 'inventory:edit')
   createdAt: string;
 }
 
@@ -58,10 +59,10 @@ export interface CashDrawer {
 // Subscription Types
 export interface SubscriptionInfo {
   licenseKey: string;
-  activatedAt: string; // ISO Date
-  expiresAt: string;   // ISO Date
+  activatedAt: string; 
+  expiresAt: string;   
   status: 'active' | 'expired' | 'trial';
-  deviceId?: string;   // Bound device identifier
+  deviceId?: string;   
 }
 
 export interface IssuedLicense {
@@ -78,7 +79,7 @@ export interface IssuedLicense {
 export interface Company {
   id: string;
   name: string;
-  dbName: string; // The IndexedDB name for this company
+  dbName: string; 
   created: string;
 }
 
@@ -102,12 +103,12 @@ export interface DatabaseConfig {
 }
 
 export interface CloudConfig {
-  enabled: boolean; // Google Drive Enabled
-  autoBackup: boolean; // Master Auto Backup Toggle
-  backupSchedules: string[]; // Array of times e.g. ["10:00", "14:00", "18:00"]
-  backupPathType?: 'default' | 'custom'; // 'default' = Downloads folder, 'custom' = Selected Directory
-  backupLocationName?: string; // Display name of the selected folder
-  lastBackup?: string; // Last successful backup time
+  enabled: boolean; 
+  autoBackup: boolean; 
+  backupSchedules: string[]; 
+  backupPathType?: 'default' | 'custom'; 
+  backupLocationName?: string; 
+  lastBackup?: string; 
   googleClientId: string;
   
   // Legacy fields
@@ -135,33 +136,32 @@ export interface Party {
   type: 'customer' | 'supplier';
   phone?: string;
   address?: string;
-  balance: number; // Positive = Receivable, Negative = Payable
-  dueDate?: string; // Date when payment is expected
+  balance: number; 
+  dueDate?: string; 
 }
 
 export interface Product {
   id: string;
   name: string;
-  type?: 'goods' | 'service'; // Added to distinguish between stockable goods and services
+  type?: 'goods' | 'service'; 
   category?: string;
   stock: number;
-  minStockLevel?: number; // Reorder threshold
+  minStockLevel?: number; 
   purchasePrice: number;
   salePrice: number;
   wholesalePrice?: number;
   unit: string;
-  // Multi-Unit Support
   secondaryUnit?: string;
-  conversionRatio?: number; // How many Secondary units in 1 Primary unit? (e.g. 1 Dozen = 12 Pcs, Ratio = 12)
+  conversionRatio?: number; 
 }
 
 export interface TransactionItem {
   productId: string;
   productName: string;
   quantity: number;
-  unit?: string; // The unit used for this specific transaction line
+  unit?: string; 
   rate: number;
-  discount?: number; // Discount amount
+  discount?: number; 
   amount: number;
 }
 
@@ -179,9 +179,9 @@ export interface Transaction {
   totalAmount: number;
   notes?: string;
   category?: string;
-  paymentMode?: string; // Kept for display/legacy
-  accountId?: string; // Link to specific Account
-  transferAccountId?: string; // For transfers: ID of the destination account
+  paymentMode?: string; 
+  accountId?: string; 
+  transferAccountId?: string; 
   cashBreakdown?: {
       received: CashNoteCount[];
       returned: CashNoteCount[];
@@ -191,31 +191,23 @@ export interface Transaction {
 export interface ServiceJob {
   id: string;
   ticketNumber: string;
-  date: string; // Intake Date
-  customerId?: string; // Optional link to Party
+  date: string; 
+  customerId?: string; 
   customerName: string;
   customerPhone: string;
   customerAddress?: string;
-  
-  // Device Info
   deviceModel: string;
-  deviceImei?: string; // Serial or IMEI
-  devicePassword?: string; // Pattern or PIN
+  deviceImei?: string; 
+  devicePassword?: string; 
   problemDescription: string;
-  
-  // Status
   status: 'PENDING' | 'IN_PROGRESS' | 'COMPLETED' | 'DELIVERED' | 'CANCELLED';
   estimatedDelivery?: string;
-  
-  // Financials
   estimatedCost: number;
   advanceAmount: number;
-  
-  // Resolution / Billing
   technicianNotes?: string;
   usedParts: TransactionItem[];
   laborCharge: number;
-  finalAmount: number; // (Parts + Labor) - Advance
+  finalAmount: number; 
 }
 
 export interface WarrantyItem {
@@ -232,14 +224,12 @@ export interface WarrantyCase {
   customerId: string;
   customerName: string;
   items: WarrantyItem[];
-  dateReceived: string; // From Customer
-  
+  dateReceived: string; 
   vendorId?: string;
   vendorName?: string;
   dateSentToVendor?: string;
   dateReceivedFromVendor?: string;
   dateReturnedToCustomer?: string;
-  
   status: 'RECEIVED' | 'SENT' | 'VENDOR_RETURNED' | 'CLOSED' | 'CANCELLED';
   notes?: string;
 }

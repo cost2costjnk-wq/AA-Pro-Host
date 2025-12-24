@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { db } from '../services/db';
 import { authService } from '../services/authService';
@@ -8,7 +9,8 @@ import {
   Bell, Package, Trash2, 
   Plus, TrendingUp, Wallet, Search, Clock,
   X, RefreshCw, Loader2, ArrowRight, PieChart as PieChartIcon,
-  ShieldCheck, Sparkles, History, Calendar, Upload, FileJson, Database, Wrench, Activity
+  ShieldCheck, Sparkles, History, Calendar, Upload, FileJson, Database, Wrench, Activity,
+  ShieldAlert
 } from 'lucide-react';
 import { AreaChart, Area, XAxis, YAxis, Tooltip, ResponsiveContainer, CartesianGrid, PieChart, Pie, Cell, Legend } from 'recharts';
 import { getDirectoryHandle, verifyPermission } from '../services/backupStorage';
@@ -43,8 +45,10 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
   const dashboardFileInputRef = useRef<HTMLInputElement>(null);
   const { addToast } = useToast();
-  const userRole = authService.getUserRole();
-  const isAdmin = userRole === 'ADMIN' || userRole === 'SUPER_ADMIN';
+  
+  const canBackup = authService.can('system-backup', 'edit');
+  const canRestore = authService.can('system-restore', 'edit');
+  const canModifyReminders = authService.can('dashboard', 'edit');
 
   useEffect(() => {
     loadDashboardData();
@@ -175,6 +179,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   };
 
   const handleManualBackup = async (e?: React.MouseEvent) => {
+      if (!canBackup) { addToast('Permission denied: Cannot perform backup', 'error'); return; }
       if (e) e.stopPropagation();
       setIsSyncing(true);
       addToast('Creating backup...', 'info');
@@ -194,6 +199,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   };
 
   const handleRestore = async (backup: any) => {
+      if (!canRestore) { addToast('Permission denied: Cannot perform restore', 'error'); return; }
       if (!window.confirm(`RESTORE DATA: Replace all local data with state from ${backup.name}?`)) return;
       try {
           const file = await backup.handle.getFile();
@@ -211,6 +217,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   };
 
   const handleFileUploadRestore = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (!canRestore) { addToast('Permission denied: Cannot perform restore', 'error'); return; }
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -243,6 +250,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
   };
 
   const handleDeleteReminder = (id: string) => {
+     if (!authService.can('dashboard', 'delete')) { addToast('Permission denied', 'error'); return; }
      db.deleteManualReminder(id);
      setReminders(db.getAllReminders());
   };
@@ -404,9 +412,11 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                       <Bell className="w-5 h-5 text-orange-500" />
                       Alerts & Reminders
                   </h3>
-                  <button onClick={() => setShowReminderModal(true)} className="text-[10px] font-black uppercase bg-brand-500 text-white px-2 py-1 rounded shadow-sm hover:bg-brand-600 transition-colors">
-                      Add New Reminder
-                  </button>
+                  {canModifyReminders && (
+                    <button onClick={() => setShowReminderModal(true)} className="text-[10px] font-black uppercase bg-brand-500 text-white px-2 py-1 rounded shadow-sm hover:bg-brand-600 transition-colors">
+                        Add New Reminder
+                    </button>
+                  )}
               </div>
 
               <div className="flex border-b border-gray-100 bg-white">
@@ -437,7 +447,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                             </div>
                         </div>
                         <div className="flex items-center gap-2">
-                             <button onClick={() => handleDeleteReminder(item.id)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg group-hover:opacity-100 transition-all opacity-0"><Trash2 className="w-4 h-4" /></button>
+                             {canModifyReminders && (
+                                <button onClick={() => handleDeleteReminder(item.id)} className="p-2 text-gray-300 hover:text-red-500 hover:bg-red-50 rounded-lg group-hover:opacity-100 transition-all opacity-0"><Trash2 className="w-4 h-4" /></button>
+                             )}
                              <div className={`w-2 h-2 rounded-full ${item.priority === 'high' ? 'bg-red-500 animate-pulse' : 'bg-gray-200'}`}></div>
                         </div>
                     </div>
@@ -451,53 +463,59 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
               </div>
            </div>
 
-           {/* Backup & Restore Column - Hidden for staff roles */}
+           {/* Backup & Restore Column - Hidden based on permissions */}
            <div className="space-y-6">
-                {isAdmin ? (
+                {(canBackup || canRestore) ? (
                     <>
-                        <button onClick={() => { setShowBackupModal(true); scanLocalPath(); }} className="w-full bg-indigo-50 p-6 rounded-3xl border border-indigo-100 flex items-center justify-between hover:bg-indigo-100 transition-all group shadow-sm">
-                            <div className="flex items-center gap-5">
-                                <div className="bg-white p-4 rounded-2xl text-indigo-600 shadow-md group-hover:scale-110 transition-transform"><History className="w-8 h-8" /></div>
-                                <div className="text-left">
-                                    <span className="font-black text-indigo-900 uppercase text-xs tracking-widest block mb-1">Local Backups</span>
-                                    <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-tighter">RESTORE FROM HISTORY</span>
+                        {canRestore && (
+                            <button onClick={() => { setShowBackupModal(true); scanLocalPath(); }} className="w-full bg-indigo-50 p-6 rounded-3xl border border-indigo-100 flex items-center justify-between hover:bg-indigo-100 transition-all group shadow-sm">
+                                <div className="flex items-center gap-5">
+                                    <div className="bg-white p-4 rounded-2xl text-indigo-600 shadow-md group-hover:scale-110 transition-transform"><History className="w-8 h-8" /></div>
+                                    <div className="text-left">
+                                        <span className="font-black text-indigo-900 uppercase text-xs tracking-widest block mb-1">Local Backups</span>
+                                        <span className="text-[10px] text-indigo-500 font-bold uppercase tracking-tighter">RESTORE FROM HISTORY</span>
+                                    </div>
                                 </div>
-                            </div>
-                            <ArrowRight className="w-6 h-6 text-indigo-300 group-hover:translate-x-1 transition-transform" />
-                        </button>
+                                <ArrowRight className="w-6 h-6 text-indigo-300 group-hover:translate-x-1 transition-transform" />
+                            </button>
+                        )}
 
-                        <button onClick={() => dashboardFileInputRef.current?.click()} className="w-full bg-blue-50 p-6 rounded-3xl border border-blue-100 flex items-center justify-between hover:bg-blue-100 transition-all group shadow-sm active:scale-[0.99]">
-                            <input type="file" accept=".json" ref={dashboardFileInputRef} className="hidden" onChange={handleFileUploadRestore} />
-                            <div className="flex items-center gap-5">
-                                <div className="bg-white p-4 rounded-2xl text-blue-600 shadow-md group-hover:scale-110 transition-transform"><Database className="w-8 h-8" /></div>
-                                <div className="text-left">
-                                    <span className="font-black text-blue-900 uppercase text-xs tracking-widest block mb-1">Restore Data</span>
-                                    <span className="text-[10px] text-blue-500 font-bold uppercase tracking-tighter">UPLOAD BACKUP FILE</span>
+                        {canRestore && (
+                            <button onClick={() => dashboardFileInputRef.current?.click()} className="w-full bg-blue-50 p-6 rounded-3xl border border-blue-100 flex items-center justify-between hover:bg-blue-100 transition-all group shadow-sm active:scale-[0.99]">
+                                <input type="file" accept=".json" ref={dashboardFileInputRef} className="hidden" onChange={handleFileUploadRestore} />
+                                <div className="flex items-center gap-5">
+                                    <div className="bg-white p-4 rounded-2xl text-blue-600 shadow-md group-hover:scale-110 transition-transform"><Database className="w-8 h-8" /></div>
+                                    <div className="text-left">
+                                        <span className="font-black text-blue-900 uppercase text-xs tracking-widest block mb-1">Restore Data</span>
+                                        <span className="text-[10px] text-blue-500 font-bold uppercase tracking-tighter">UPLOAD BACKUP FILE</span>
+                                    </div>
                                 </div>
-                            </div>
-                            <Upload className="w-6 h-6 text-blue-300 group-hover:-translate-y-1 transition-transform" />
-                        </button>
+                                <Upload className="w-6 h-6 text-blue-300 group-hover:-translate-y-1 transition-transform" />
+                            </button>
+                        )}
 
-                        <button onClick={handleManualBackup} disabled={isSyncing} className="w-full bg-emerald-50 p-6 rounded-3xl border border-emerald-100 flex items-center justify-between hover:bg-emerald-100 transition-all group shadow-sm active:scale-[0.99] disabled:opacity-50">
-                            <div className="flex items-center gap-5">
-                                <div className="bg-white p-4 rounded-2xl text-emerald-600 shadow-md group-hover:scale-110 transition-transform">
-                                    {isSyncing ? <Loader2 className="w-8 h-8 animate-spin" /> : <RefreshCw className="w-8 h-8" />}
+                        {canBackup && (
+                            <button onClick={handleManualBackup} disabled={isSyncing} className="w-full bg-emerald-50 p-6 rounded-3xl border border-emerald-100 flex items-center justify-between hover:bg-emerald-100 transition-all group shadow-sm active:scale-[0.99] disabled:opacity-50">
+                                <div className="flex items-center gap-5">
+                                    <div className="bg-white p-4 rounded-2xl text-emerald-600 shadow-md group-hover:scale-110 transition-transform">
+                                        {isSyncing ? <Loader2 className="w-8 h-8 animate-spin" /> : <RefreshCw className="w-8 h-8" />}
+                                    </div>
+                                    <div className="text-left">
+                                        <span className="font-black text-emerald-900 uppercase text-xs tracking-widest block mb-1">Quick Backup</span>
+                                        <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-tighter">IMMEDIATE SNAPSHOT</span>
+                                    </div>
                                 </div>
-                                <div className="text-left">
-                                    <span className="font-black text-emerald-900 uppercase text-xs tracking-widest block mb-1">Quick Backup</span>
-                                    <span className="text-[10px] text-emerald-500 font-bold uppercase tracking-tighter">IMMEDIATE SNAPSHOT</span>
+                                <div className="flex items-center gap-2 px-3 py-1 bg-emerald-600 text-white rounded-full text-[9px] font-black uppercase tracking-wider">
+                                    <ShieldCheck className="w-3 h-3" /> Secure
                                 </div>
-                            </div>
-                            <div className="flex items-center gap-2 px-3 py-1 bg-emerald-600 text-white rounded-full text-[9px] font-black uppercase tracking-wider">
-                                <ShieldCheck className="w-3 h-3" /> Secure
-                            </div>
-                        </button>
+                            </button>
+                        )}
                     </>
                 ) : (
                     <div className="bg-gray-100/50 p-8 rounded-[2.5rem] border-2 border-dashed border-gray-200 flex flex-col items-center justify-center text-center">
-                        <Activity className="w-12 h-12 text-gray-300 mb-4" />
-                        <h4 className="text-xs font-black uppercase text-gray-400 tracking-widest">Workspace Insights</h4>
-                        <p className="text-[10px] text-gray-400 mt-2 font-medium">Additional analytics are restricted based on your staff role.</p>
+                        <ShieldAlert className="w-12 h-12 text-gray-300 mb-4" />
+                        <h4 className="text-xs font-black uppercase text-gray-400 tracking-widest">Utility Access Locked</h4>
+                        <p className="text-[10px] text-gray-400 mt-2 font-medium">Backup and Restore functions are disabled for your profile.</p>
                     </div>
                 )}
            </div>
@@ -516,7 +534,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
 
                 <div className="flex-1 overflow-y-auto p-6 space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        <button disabled={isSyncing} onClick={handleManualBackup} className="flex flex-col items-center justify-center p-6 bg-emerald-50 border-2 border-emerald-100 rounded-2xl hover:bg-emerald-100 transition-all group disabled:opacity-50">
+                        <button disabled={isSyncing || !canBackup} onClick={handleManualBackup} className="flex flex-col items-center justify-center p-6 bg-emerald-50 border-2 border-emerald-100 rounded-2xl hover:bg-emerald-100 transition-all group disabled:opacity-50">
                             {isSyncing ? <Loader2 className="w-10 h-10 animate-spin text-emerald-600 mb-3" /> : <RefreshCw className="w-10 h-10 text-emerald-600 mb-3 group-hover:scale-110" />}
                             <span className="font-black text-emerald-900 uppercase text-xs">Create Backup</span>
                         </button>
@@ -530,8 +548,9 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                 onChange={handleFileUploadRestore} 
                             />
                             <button 
+                                disabled={!canRestore}
                                 onClick={() => fileInputRef.current?.click()}
-                                className="w-full flex flex-col items-center justify-center p-6 bg-blue-50 border-2 border-blue-100 rounded-2xl hover:bg-blue-100 transition-all group"
+                                className="w-full flex flex-col items-center justify-center p-6 bg-blue-50 border-2 border-blue-100 rounded-2xl hover:bg-blue-100 transition-all group disabled:opacity-50"
                             >
                                 <Upload className="w-10 h-10 text-blue-600 mb-3 group-hover:scale-110" />
                                 <span className="font-black text-blue-900 uppercase text-xs">Upload & Restore</span>
@@ -548,7 +567,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                     </div>
 
                     {latestBackup && (
-                        <div className="bg-brand-50 border-2 border-brand-200 p-5 rounded-3xl animate-in zoom-in-95 duration-300">
+                        <div className={`bg-brand-50 border-2 border-brand-200 p-5 rounded-3xl animate-in zoom-in-95 duration-300 ${!canRestore ? 'opacity-50 grayscale' : ''}`}>
                             <div className="flex items-center justify-between mb-3">
                                 <h4 className="text-[10px] font-black text-brand-600 uppercase tracking-widest flex items-center gap-2"><Sparkles className="w-3.5 h-3.5" /> Most Recent Point</h4>
                             </div>
@@ -560,7 +579,7 @@ const Dashboard: React.FC<DashboardProps> = ({ onNavigate }) => {
                                         <p className="text-xs text-gray-500 font-medium">{latestBackup.date.toLocaleString()}</p>
                                     </div>
                                 </div>
-                                <button onClick={() => handleRestore(latestBackup)} className="px-6 py-3 bg-brand-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-brand-500/20 hover:bg-brand-600 transition-all active:scale-95 flex items-center gap-2">
+                                <button disabled={!canRestore} onClick={() => handleRestore(latestBackup)} className="px-6 py-3 bg-brand-500 text-white rounded-2xl text-[10px] font-black uppercase tracking-widest shadow-lg shadow-brand-500/20 hover:bg-brand-600 transition-all active:scale-95 flex items-center gap-2 disabled:cursor-not-allowed">
                                     Quick Restore <RefreshCw className="w-3 h-3" />
                                 </button>
                             </div>
