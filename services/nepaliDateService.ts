@@ -1,4 +1,3 @@
-
 // A simplified AD to BS converter and vice versa
 // Reference: April 13, 2024 = Baisakh 1, 2081
 // This covers the current fiscal year window reasonably well for a demo.
@@ -11,8 +10,8 @@ const REF_BS_YEAR = 2081;
 const REF_BS_MONTH = 0; // Baisakh (0-indexed)
 const REF_BS_DAY = 1;
 
-// Approximate days in Nepali months (Standard approximation for demo)
-const BS_MONTH_DAYS = [31, 32, 31, 32, 31, 30, 30, 30, 29, 30, 29, 31];
+// Approximate days in Nepali months as provided by user
+const BS_MONTH_DAYS = [31, 31, 32, 32, 31, 30, 30, 30, 29, 29, 30, 30];
 const BS_MONTH_NAMES = [
   'Baisakh', 'Jestha', 'Asar', 'Shrawan', 'Bhadra', 'Asoj', 
   'Kartik', 'Mangsir', 'Poush', 'Magh', 'Falgun', 'Chaitra'

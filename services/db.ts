@@ -1,457 +1,420 @@
+
 import { openDB, IDBPDatabase } from 'idb';
 import { 
-  Company, BusinessProfile, DatabaseConfig, CloudConfig, 
-  Account, Party, Product, Transaction, Reminder, ServiceJob, TransactionItem, CashDrawer, CashNoteCount, Denomination, WarrantyCase, SubscriptionInfo, User, IssuedLicense
+  BusinessProfile, Account, Party, Product, Transaction, Reminder, ServiceJob, Category, CashDrawer, Company, CloudConfig, WarrantyCase, User, IssuedLicense
 } from '../types';
-
-interface CompanyData {
-  profile: BusinessProfile;
-  dbConfig: DatabaseConfig;
-  cloudConfig: CloudConfig;
-  accounts: Account[];
-  parties: Party[];
-  products: Product[];
-  transactions: Transaction[];
-  reminders: Reminder[];
-  serviceJobs: ServiceJob[];
-  warrantyCases: WarrantyCase[];
-  replenishmentDraft?: any[];
-  cashDrawer: CashDrawer;
-  users: User[];
-}
 
 const DB_NAME = 'aapro_enterprise_v2';
 const COMPANIES_STORE = 'companies';
 const DATA_STORE = 'company_data';
-const GLOBAL_CONFIG_STORE = 'global_config';
-
-const DEFAULT_CASH_DRAWER: CashDrawer = {
-  notes: [
-    { denomination: 1000, count: 0 },
-    { denomination: 500, count: 0 },
-    { denomination: 100, count: 0 },
-    { denomination: 50, count: 0 },
-    { denomination: 20, count: 0 },
-    { denomination: 10, count: 0 },
-    { denomination: 5, count: 0 },
-    { denomination: 2, count: 0 },
-    { denomination: 1, count: 0 }
-  ],
-  lastUpdated: new Date().toISOString()
-};
-
-const getInitialCompanyData = (name: string = 'My Business'): CompanyData => ({
-  profile: { name, address: '', pan: '', phone: '' },
-  dbConfig: { mode: 'local' },
-  cloudConfig: { 
-    enabled: true, 
-    autoBackup: true, 
-    backupSchedules: ['09:00', '13:00', '18:00', '21:00'],
-    googleClientId: '476453033908-4utdf52i85jssocqgghjpcpturfkkeu4.apps.googleusercontent.com' 
-  },
-  accounts: [
-    { id: '1', name: 'Cash In Hand', type: 'Cash', balance: 0, isDefault: true }
-  ],
-  parties: [],
-  products: [],
-  transactions: [],
-  reminders: [],
-  serviceJobs: [],
-  warrantyCases: [],
-  replenishmentDraft: [],
-  cashDrawer: JSON.parse(JSON.stringify(DEFAULT_CASH_DRAWER)),
-  users: []
-});
 
 export class DatabaseService {
-  private activeCompanyId: string | null = null;
-  private cache: CompanyData = getInitialCompanyData();
   private db: IDBPDatabase | null = null;
-  private globalSubInfo: SubscriptionInfo | undefined = undefined;
+  private activeCompanyId: string = 'main';
+  private profile: BusinessProfile | null = null;
+  private isLoaded = false;
+  private cloudConfig: CloudConfig = { 
+    enabled: false, 
+    autoBackup: false, 
+    backupSchedules: [], 
+    googleClientId: '',
+    compressionEnabled: true
+  };
 
-  async initDb() {
+  private async getDb(): Promise<IDBPDatabase> {
     if (this.db) return this.db;
     this.db = await openDB(DB_NAME, 2, {
-      upgrade(db, oldVersion) {
+      upgrade(db) {
         if (!db.objectStoreNames.contains(COMPANIES_STORE)) {
           db.createObjectStore(COMPANIES_STORE, { keyPath: 'id' });
         }
         if (!db.objectStoreNames.contains(DATA_STORE)) {
           db.createObjectStore(DATA_STORE);
         }
-        if (!db.objectStoreNames.contains(GLOBAL_CONFIG_STORE)) {
-          db.createObjectStore(GLOBAL_CONFIG_STORE);
+        if (!db.objectStoreNames.contains('global_config')) {
+          db.createObjectStore('global_config');
         }
       },
     });
     return this.db;
   }
 
-  async getCompanies(): Promise<Company[]> {
-    const db = await this.initDb();
-    return await db.getAll(COMPANIES_STORE);
-  }
-
-  async createCompany(name: string): Promise<Company> {
-    const db = await this.initDb();
-    const newCompany: Company = {
-      id: Date.now().toString(),
-      name,
-      dbName: `aapro_db_${Date.now()}`,
-      created: new Date().toISOString()
-    };
-    await db.put(COMPANIES_STORE, newCompany);
-    await db.put(DATA_STORE, getInitialCompanyData(name), newCompany.id);
-    return newCompany;
-  }
-
-  async switchCompany(id: string) {
-    const db = await this.initDb();
-    const company = await db.get(COMPANIES_STORE, id);
-    if (!company) throw new Error('Company not found');
-    
+  async init(id: string = 'main') {
     this.activeCompanyId = id;
-    localStorage.setItem('active_company_id', id);
-    await this.loadDataIntoCache(id);
+    await this.refreshLocalCaches();
+    this.isLoaded = true;
+  }
+
+  getActiveCompanyId() { return this.activeCompanyId; }
+
+  async refreshLocalCaches() {
+    const db = await this.getDb();
+    const data = await db.get(DATA_STORE, this.activeCompanyId) || {};
+    
+    (window as any)._prod_cache = data.products || [];
+    (window as any)._party_cache = data.parties || [];
+    (window as any)._acc_cache = data.accounts || [];
+    (window as any)._cat_cache = data.categories || [];
+    (window as any)._users_cache = data.users || [];
+    
+    const allTxns = data.transactions || [];
+    const MAX_MEMORY_TXNS = 5000;
+    (window as any)._tx_cache = allTxns.length > MAX_MEMORY_TXNS ? allTxns.slice(-MAX_MEMORY_TXNS) : allTxns;
+
+    (window as any)._jobs_cache = data.serviceJobs || [];
+    (window as any)._reminders_cache = data.reminders || [];
+    (window as any)._warranty_cache = data.warrantyCases || [];
+    (window as any)._cash_drawer = data.cashDrawer || { 
+      notes: [1000, 500, 100, 50, 20, 10, 5, 2, 1].map(d => ({ denomination: d as any, count: 0 })), 
+      lastUpdated: new Date().toISOString() 
+    };
+    this.profile = data.profile || { name: 'AA Pro Business', address: '', pan: '', phone: '' };
+    if (data.cloudConfig) this.cloudConfig = data.cloudConfig;
     window.dispatchEvent(new Event('db-updated'));
   }
 
-  getActiveCompanyId() {
-    return this.activeCompanyId;
-  }
-
-  async init(id: string) {
-     const db = await this.initDb();
-     const company = await db.get(COMPANIES_STORE, id);
-     if (company) {
-       this.activeCompanyId = id;
-       await this.loadDataIntoCache(id);
-     }
-  }
-
-  logout() {
-    this.activeCompanyId = null;
-    localStorage.removeItem('active_company_id');
-    this.cache = getInitialCompanyData();
-    window.dispatchEvent(new Event('db-logout'));
-  }
-
-  private async loadDataIntoCache(companyId: string) {
-    const db = await this.initDb();
-    const stored = await db.get(DATA_STORE, companyId);
-    
-    this.globalSubInfo = await db.get(GLOBAL_CONFIG_STORE, 'subscription_info');
-
-    if (stored) {
-      const defaults = getInitialCompanyData();
-      this.cache = {
-          ...defaults,
-          ...stored,
-          profile: { ...defaults.profile, ...(stored.profile || {}) },
-          cloudConfig: { ...defaults.cloudConfig, ...(stored.cloudConfig || {}) },
-          cashDrawer: {
-            ...defaults.cashDrawer,
-            ...(stored.cashDrawer || {}),
-            notes: (stored.cashDrawer?.notes && Array.isArray(stored.cashDrawer.notes)) ? stored.cashDrawer.notes : defaults.cashDrawer.notes
-          },
-          serviceJobs: stored.serviceJobs || [],
-          warrantyCases: stored.warrantyCases || [],
-          users: stored.users || []
-      };
-    } else {
-      this.cache = getInitialCompanyData();
-    }
-  }
-
-  private async persist() {
-    if (!this.activeCompanyId) return;
-    const db = await this.initDb();
-    await db.put(DATA_STORE, this.cache, this.activeCompanyId);
+  private async saveToDb() {
+    const db = await this.getDb();
+    const data = {
+      profile: this.profile,
+      products: this.getProducts(),
+      parties: this.getParties(),
+      transactions: this.getTransactions(),
+      accounts: this.getAccounts(),
+      serviceJobs: this.getServiceJobs(),
+      reminders: this.getAllReminders(),
+      categories: this.getCategories(),
+      warrantyCases: this.getWarrantyCases(),
+      users: this.getUsers(),
+      cashDrawer: this.getCashDrawer(),
+      cloudConfig: this.cloudConfig
+    };
+    await db.put(DATA_STORE, data, this.activeCompanyId);
     window.dispatchEvent(new Event('db-updated'));
-    window.dispatchEvent(new Event('db-content-changed'));
   }
 
-  async getGlobalIssuedLicenses(): Promise<IssuedLicense[]> {
-    const db = await this.initDb();
-    return (await db.get(GLOBAL_CONFIG_STORE, 'issued_licenses')) || [];
+  getBusinessProfile(): BusinessProfile {
+    return this.profile || { name: 'AA Pro Business', address: '', pan: '', phone: '' };
   }
-
-  async addGlobalIssuedLicense(license: IssuedLicense) {
-    const db = await this.initDb();
-    const licenses = (await db.get(GLOBAL_CONFIG_STORE, 'issued_licenses')) || [];
-    licenses.push(license);
-    await db.put(GLOBAL_CONFIG_STORE, licenses, 'issued_licenses');
-  }
-
-  async deleteGlobalIssuedLicense(id: string) {
-    const db = await this.initDb();
-    const licenses = (await db.get(GLOBAL_CONFIG_STORE, 'issued_licenses')) || [];
-    const filtered = licenses.filter((l: IssuedLicense) => l.id !== id);
-    await db.put(GLOBAL_CONFIG_STORE, filtered, 'issued_licenses');
-  }
-
-  getUsers() { return this.cache.users || []; }
-  addUser(u: User) { this.cache.users.push(u); this.persist(); }
-  updateUser(u: User) {
-    const idx = this.cache.users.findIndex(user => user.id === u.id);
-    if (idx !== -1) { this.cache.users[idx] = u; this.persist(); }
-  }
-  deleteUser(id: string) {
-    this.cache.users = this.cache.users.filter(u => u.id !== id);
-    this.persist();
-  }
-
-  async closeAndStartNewYear(nextYearName: string) {
-    if (!this.activeCompanyId) return { success: false, message: 'No active session' };
-
-    const currentProfile = this.cache.profile;
-    const carryParties = [...this.cache.parties];
-    const carryProducts = [...this.cache.products];
-    const carryAccounts = [...this.cache.accounts];
-    const carryCashDrawer = JSON.parse(JSON.stringify(this.cache.cashDrawer));
-    const carryUsers = this.cache.users;
-    
-    const carryServiceJobs = this.cache.serviceJobs.filter(j => !['DELIVERED', 'CANCELLED'].includes(j.status));
-    const carryWarrantyCases = this.cache.warrantyCases.filter(w => !['CLOSED', 'CANCELLED'].includes(w.status));
-
-    const newYearCompany = await this.createCompany(`${currentProfile.name} (${nextYearName})`);
-    
-    const newData: CompanyData = getInitialCompanyData(currentProfile.name);
-    newData.profile = { ...currentProfile };
-    newData.cloudConfig = { ...this.cache.cloudConfig };
-    newData.cashDrawer = carryCashDrawer;
-    newData.serviceJobs = carryServiceJobs;
-    newData.warrantyCases = carryWarrantyCases;
-    newData.users = carryUsers;
-    
-    const openingTxns: Transaction[] = [];
-    const date = new Date().toISOString();
-
-    newData.accounts = carryAccounts.map(acc => ({ ...acc, balance: acc.balance }));
-    newData.parties = carryParties.map(p => {
-        if (p.balance !== 0) {
-            openingTxns.push({
-                id: `OP-${p.id}-${Date.now()}`,
-                date,
-                type: 'BALANCE_ADJUSTMENT',
-                partyId: p.id,
-                partyName: p.name,
-                items: [],
-                totalAmount: p.balance,
-                notes: 'Financial Year Opening Balance',
-                category: 'Opening Balance',
-                paymentMode: 'Adjustment'
-            });
-        }
-        return { ...p, balance: 0 }; 
-    });
-    newData.products = carryProducts.map(p => ({ ...p, stock: p.stock }));
-
-    const db = await this.initDb();
-    await db.put(DATA_STORE, newData, newYearCompany.id);
-    await this.switchCompany(newYearCompany.id);
-    openingTxns.forEach(t => this.addTransaction(t));
-    
-    return { success: true, companyId: newYearCompany.id };
-  }
-
-  getBusinessProfile() { return this.cache.profile; }
-  updateBusinessProfile(p: BusinessProfile) { this.cache.profile = p; this.persist(); }
-  getCloudConfig() { return this.cache.cloudConfig; }
-  updateCloudConfig(c: CloudConfig) { this.cache.cloudConfig = c; this.persist(); }
-  getDatabaseConfig() { return this.cache.dbConfig; }
   
-  getCashDrawer(): CashDrawer { return this.cache.cashDrawer || JSON.parse(JSON.stringify(DEFAULT_CASH_DRAWER)); }
-  updateCashDrawer(drawer: CashDrawer) { this.cache.cashDrawer = drawer; this.persist(); }
-
-  getSubscriptionInfo(): SubscriptionInfo | undefined { 
-    return this.globalSubInfo; 
+  async updateBusinessProfile(p: BusinessProfile) {
+    this.profile = p;
+    const db = await this.getDb();
+    const reg = await db.get(COMPANIES_STORE, this.activeCompanyId);
+    if (reg) { reg.name = p.name; await db.put(COMPANIES_STORE, reg); }
+    await this.saveToDb();
   }
 
-  async updateSubscriptionInfo(s: SubscriptionInfo) { 
-    const db = await this.initDb();
-    this.globalSubInfo = s;
-    await db.put(GLOBAL_CONFIG_STORE, s, 'subscription_info');
-    window.dispatchEvent(new Event('db-updated'));
+  getTransactions(): Transaction[] { return (window as any)._tx_cache || []; }
+
+  async addTransaction(t: Transaction) {
+    const txs = this.getTransactions();
+    txs.push(t);
+    await this.applyImpact(t, 1);
+    await this.saveToDb();
   }
 
-  getAccounts() { return this.cache.accounts; }
-  addAccount(a: Account) { this.cache.accounts.push(a); this.persist(); }
-  updateAccount(a: Account) { 
-    const idx = this.cache.accounts.findIndex(acc => acc.id === a.id);
-    if (idx !== -1) { this.cache.accounts[idx] = a; this.persist(); }
-  }
-  deleteAccount(id: string) {
-    if (id === '1') return false;
-    this.cache.accounts = this.cache.accounts.filter(a => a.id !== id);
-    this.persist();
-    return true;
-  }
-
-  getParties() { return this.cache.parties; }
-  addParty(p: Party) { this.cache.parties.push(p); this.persist(); }
-  updateParty(p: Party) {
-     const idx = this.cache.parties.findIndex(item => item.id === p.id);
-     if (idx !== -1) { this.cache.parties[idx] = p; this.persist(); }
-  }
-  async bulkAddParties(parties: Party[]) { this.cache.parties.push(...parties); this.persist(); }
-
-  getProducts() { return this.cache.products; }
-  addProduct(p: Product) { this.cache.products.push(p); this.persist(); }
-  updateProduct(p: Product) {
-    const idx = this.cache.products.findIndex(item => item.id === p.id);
-    if (idx !== -1) { this.cache.products[idx] = p; this.persist(); }
-  }
-  deleteProduct(id: string) {
-    this.cache.products = this.cache.products.filter(p => p.id !== id);
-    this.persist();
-  }
-  async bulkAddProducts(products: Product[]) { this.cache.products.push(...products); this.persist(); }
-
-  getTransactions() { return this.cache.transactions; }
-  addTransaction(t: Transaction) {
-    this.cache.transactions.push(t);
-    this.applyImpact(t, 1);
-    this.persist();
-  }
-  deleteTransaction(id: string) {
-    const t = this.cache.transactions.find(item => item.id === id);
-    if (t) { this.applyImpact(t, -1); this.cache.transactions = this.cache.transactions.filter(item => item.id !== id); this.persist(); }
-  }
-  updateTransaction(id: string, t: Transaction) {
-    const oldIdx = this.cache.transactions.findIndex(item => item.id === id);
-    if (oldIdx !== -1) {
-      const oldT = this.cache.transactions[oldIdx];
-      this.applyImpact(oldT, -1);
-      this.cache.transactions[oldIdx] = t;
-      this.applyImpact(t, 1);
-      this.persist();
+  async updateTransaction(id: string, t: Transaction) {
+    const txs = this.getTransactions();
+    const idx = txs.findIndex(tx => tx.id === id);
+    if (idx > -1) {
+      await this.applyImpact(txs[idx], -1);
+      txs[idx] = t;
+      await this.applyImpact(t, 1);
+      await this.saveToDb();
     }
   }
 
-  private applyImpact(t: Transaction, factor: number) {
-     // 1. Party Balance Impact
+  async deleteTransaction(id: string) {
+    const txs = this.getTransactions();
+    const idx = txs.findIndex(tx => tx.id === id);
+    if (idx > -1) {
+      await this.applyImpact(txs[idx], -1);
+      txs.splice(idx, 1);
+      await this.saveToDb();
+    }
+  }
+
+  private async applyImpact(t: Transaction, factor: number) {
+     // 1. Ledger Impact
      if (t.partyId) {
-        const party = this.cache.parties.find(p => p.id === t.partyId);
+        const parties = this.getParties();
+        const party = parties.find(p => p.id === t.partyId);
         if (party) {
             let amt = 0;
             switch (t.type) {
-                case 'SALE': amt = t.totalAmount; break;
-                case 'PURCHASE': amt = -t.totalAmount; break;
-                case 'PAYMENT_IN': amt = -t.totalAmount; break;
-                case 'PAYMENT_OUT': amt = t.totalAmount; break;
-                case 'BALANCE_ADJUSTMENT': amt = t.totalAmount; break;
-                case 'SALE_RETURN': amt = -t.totalAmount; break;
-                case 'PURCHASE_RETURN': amt = t.totalAmount; break;
+                case 'SALE': case 'PURCHASE_RETURN': case 'PAYMENT_OUT': case 'BALANCE_ADJUSTMENT': amt = t.totalAmount; break;
+                case 'PURCHASE': case 'PAYMENT_IN': case 'SALE_RETURN': amt = -t.totalAmount; break;
             }
             party.balance += (amt * factor);
         }
      }
-
-     // 2. Inventory Stock Impact
-     t.items?.forEach(item => {
-        const p = this.cache.products.find(prod => prod.id === item.productId);
-        if (p && p.type !== 'service') {
-            if (t.type === 'SALE' || t.type === 'PURCHASE_RETURN') p.stock -= (item.quantity * factor);
-            else if (t.type === 'PURCHASE' || t.type === 'SALE_RETURN') p.stock += (item.quantity * factor);
-        }
-     });
-
-     // 3. Account Balance Impact
-     if (t.accountId) {
-        const acc = this.cache.accounts.find(a => a.id === t.accountId);
-        if (acc) {
-            let amt = (['SALE', 'PAYMENT_IN', 'PURCHASE_RETURN'].includes(t.type)) ? t.totalAmount : -t.totalAmount;
-            if (t.type === 'BALANCE_ADJUSTMENT') amt = t.totalAmount;
-            acc.balance += (amt * factor);
+     // 2. Inventory Impact
+     for (const item of (t.items || [])) {
+        const product = this.getProducts().find(p => p.id === item.productId);
+        if (product && product.type !== 'service') {
+            if (t.type === 'SALE' || t.type === 'PURCHASE_RETURN') product.stock -= (item.quantity * factor);
+            else if (t.type === 'PURCHASE' || t.type === 'SALE_RETURN') product.stock += (item.quantity * factor);
         }
      }
+     // 3. Bank/Cash Balance Impact
+     if (t.accountId) {
+         const accs = this.getAccounts();
+         const acc = accs.find(a => a.id === t.accountId);
+         if (acc) {
+             let isMoneyIn = ['SALE', 'PAYMENT_IN', 'PURCHASE_RETURN'].includes(t.type);
+             if (['PURCHASE', 'PAYMENT_OUT', 'SALE_RETURN', 'EXPENSE'].includes(t.type)) isMoneyIn = false;
+             if (t.type === 'BALANCE_ADJUSTMENT') isMoneyIn = t.totalAmount >= 0;
+             acc.balance += (isMoneyIn ? (Math.abs(t.totalAmount) * factor) : (-Math.abs(t.totalAmount) * factor));
+         }
+     }
 
-     // 4. Physical Cash Drawer Synchronization (FIX: Updates Virtual Physical Note Counts)
+     // 4. PHYSICAL CASH DRAWER SYNC (Note Breakdown)
      if (t.cashBreakdown) {
          const drawer = this.getCashDrawer();
-         
-         // Add received notes to drawer
-         t.cashBreakdown.received.forEach(rn => {
-             const note = drawer.notes.find(dn => dn.denomination === rn.denomination);
-             if (note) note.count += (rn.count * factor);
+         // Process Received Notes (Into Drawer)
+         t.cashBreakdown.received.forEach(noteCount => {
+             if (noteCount.count > 0) {
+                 const drawerNote = drawer.notes.find(n => n.denomination === noteCount.denomination);
+                 if (drawerNote) drawerNote.count += (noteCount.count * factor);
+             }
          });
-
-         // Remove returned notes from drawer
-         t.cashBreakdown.returned.forEach(rn => {
-            const note = drawer.notes.find(dn => dn.denomination === rn.denomination);
-            if (note) note.count -= (rn.count * factor);
+         // Process Returned Notes (Change Given Out)
+         t.cashBreakdown.returned.forEach(noteCount => {
+             if (noteCount.count > 0) {
+                 const drawerNote = drawer.notes.find(n => n.denomination === noteCount.denomination);
+                 if (drawerNote) drawerNote.count -= (noteCount.count * factor);
+             }
          });
-
          drawer.lastUpdated = new Date().toISOString();
-         this.cache.cashDrawer = drawer;
+         (window as any)._cash_drawer = { ...drawer };
      }
   }
 
-  getAllReminders(): Reminder[] { return this.cache.reminders || []; }
-  addManualReminder(r: Reminder) { this.cache.reminders.push(r); this.persist(); }
-  deleteManualReminder(id: string) { this.cache.reminders = this.cache.reminders.filter(r => r.id !== id); this.persist(); }
-
-  getServiceJobs() { return this.cache.serviceJobs || []; }
-  addServiceJob(j: ServiceJob) { this.cache.serviceJobs.push(j); this.persist(); }
-  updateServiceJob(j: ServiceJob) {
-      const idx = this.cache.serviceJobs.findIndex(job => job.id === j.id);
-      if (idx !== -1) { this.cache.serviceJobs[idx] = j; this.persist(); }
+  getParties(): Party[] { return (window as any)._party_cache || []; }
+  async addParty(p: Party) { this.getParties().push(p); await this.saveToDb(); }
+  async updateParty(p: Party) {
+    const list = this.getParties();
+    const idx = list.findIndex(item => item.id === p.id);
+    if (idx > -1) list[idx] = p;
+    await this.saveToDb();
   }
-  deleteServiceJob(id: string) {
-    this.cache.serviceJobs = this.cache.serviceJobs.filter(j => j.id !== id);
-    this.persist();
-  }
-
-  getWarrantyCases() { return this.cache.warrantyCases || []; }
-  addWarrantyCase(c: WarrantyCase) { this.cache.warrantyCases.push(c); this.persist(); }
-  updateWarrantyCase(c: WarrantyCase) {
-    const idx = this.cache.warrantyCases.findIndex(item => item.id === c.id);
-    if (idx !== -1) { this.cache.warrantyCases[idx] = c; this.persist(); }
-  }
-  deleteWarrantyCase(id: string) {
-    this.cache.warrantyCases = this.cache.warrantyCases.filter(c => c.id !== id);
-    this.persist();
+  async bulkAddParties(parties: Party[]) {
+    const current = this.getParties();
+    (window as any)._party_cache = [...current, ...parties];
+    await this.saveToDb();
   }
 
-  getBackupData() {
-    return { 
-      ...this.cache, 
-      backupVersion: '2.7-IDB', 
-      timestamp: new Date().toISOString(),
-      appId: 'AA_PRO_ENTERPRISE',
-      companyId: this.activeCompanyId
+  getProducts(): Product[] { return (window as any)._prod_cache || []; }
+  async addProduct(p: Product) { this.getProducts().push(p); await this.saveToDb(); }
+  async updateProduct(p: Product) {
+    const list = this.getProducts();
+    const idx = list.findIndex(item => item.id === p.id);
+    if (idx > -1) list[idx] = p;
+    await this.saveToDb();
+  }
+  async deleteProduct(id: string) {
+    const list = this.getProducts();
+    (window as any)._prod_cache = list.filter(p => p.id !== id);
+    await this.saveToDb();
+  }
+  async bulkAddProducts(products: Product[]) {
+    const current = this.getProducts();
+    (window as any)._prod_cache = [...current, ...products];
+    await this.saveToDb();
+  }
+
+  getAccounts(): Account[] { 
+    const list = (window as any)._acc_cache || [];
+    if (list.length === 0) return [{ id: '1', name: 'Cash Account', type: 'Cash', balance: 0, isDefault: true }];
+    return list;
+  }
+  async addAccount(a: Account) { this.getAccounts().push(a); await this.saveToDb(); }
+  async updateAccount(a: Account) {
+    const list = this.getAccounts();
+    const idx = list.findIndex(item => item.id === a.id);
+    if (idx > -1) list[idx] = a;
+    await this.saveToDb();
+  }
+  async deleteAccount(id: string) {
+    if (id === '1') return false;
+    const list = this.getAccounts();
+    (window as any)._acc_cache = list.filter(a => a.id !== id);
+    await this.saveToDb();
+    return true;
+  }
+
+  getServiceJobs(): ServiceJob[] { return (window as any)._jobs_cache || []; }
+  async addServiceJob(j: ServiceJob) { this.getServiceJobs().push(j); await this.saveToDb(); }
+  async updateServiceJob(j: ServiceJob) {
+    const list = this.getServiceJobs();
+    const idx = list.findIndex(item => item.id === j.id);
+    if (idx > -1) list[idx] = j;
+    await this.saveToDb();
+  }
+  async deleteServiceJob(id: string) {
+    const list = this.getServiceJobs();
+    (window as any)._jobs_cache = list.filter(j => j.id !== id);
+    await this.saveToDb();
+  }
+
+  getWarrantyCases(): WarrantyCase[] { return (window as any)._warranty_cache || []; }
+  async addWarrantyCase(wc: WarrantyCase) { this.getWarrantyCases().push(wc); await this.saveToDb(); }
+  async updateWarrantyCase(wc: WarrantyCase) {
+    const list = this.getWarrantyCases();
+    const idx = list.findIndex(item => item.id === wc.id);
+    if (idx > -1) list[idx] = wc;
+    await this.saveToDb();
+  }
+  async deleteWarrantyCase(id: string) {
+    const list = this.getWarrantyCases();
+    (window as any)._warranty_cache = list.filter(w => w.id !== id);
+    await this.saveToDb();
+  }
+
+  getCategories(): Category[] { return (window as any)._cat_cache || []; }
+  async addCategory(c: Category) { this.getCategories().push(c); await this.saveToDb(); }
+  async updateCategory(c: Category) {
+    const list = this.getCategories();
+    const idx = list.findIndex(item => item.id === c.id);
+    if (idx > -1) list[idx] = c;
+    await this.saveToDb();
+  }
+  async deleteCategory(id: string) {
+    const list = this.getCategories();
+    (window as any)._cat_cache = list.filter(c => c.id !== id);
+    await this.saveToDb();
+  }
+
+  getAllReminders(): Reminder[] { return (window as any)._reminders_cache || []; }
+  async addManualReminder(r: Reminder) { this.getAllReminders().push(r); await this.saveToDb(); }
+  async deleteManualReminder(id: string) {
+    const list = this.getAllReminders();
+    (window as any)._reminders_cache = list.filter(r => r.id !== id);
+    await this.saveToDb();
+  }
+
+  getCashDrawer(): CashDrawer { 
+    return (window as any)._cash_drawer || { 
+      notes: [1000, 500, 100, 50, 20, 10, 5, 2, 1].map(d => ({ denomination: d as any, count: 0 })), 
+      lastUpdated: new Date().toISOString() 
+    }; 
+  }
+  async updateCashDrawer(d: CashDrawer) { (window as any)._cash_drawer = d; await this.saveToDb(); }
+
+  getUsers(): User[] { return (window as any)._users_cache || []; }
+  async addUser(u: User) { this.getUsers().push(u); await this.saveToDb(); }
+  async updateUser(u: User) {
+    const list = this.getUsers();
+    const idx = list.findIndex(item => item.id === u.id);
+    if (idx > -1) list[idx] = u;
+    await this.saveToDb();
+  }
+  async deleteUser(id: string) {
+    const list = this.getUsers();
+    (window as any)._users_cache = list.filter(u => u.id !== id);
+    await this.saveToDb();
+  }
+
+  async getCompanies(): Promise<Company[]> { 
+    const db = await this.getDb();
+    return await db.getAll(COMPANIES_STORE); 
+  }
+
+  async createCompany(name: string): Promise<Company> {
+    const db = await this.getDb();
+    const id = Date.now().toString();
+    const company = { id, name, created: new Date().toISOString(), dbName: `db_${id}` };
+    await db.put(COMPANIES_STORE, company);
+    return company;
+  }
+
+  async switchCompany(id: string): Promise<void> {
+    this.activeCompanyId = id;
+    await this.refreshLocalCaches();
+  }
+
+  async getGlobalIssuedLicenses(): Promise<IssuedLicense[]> {
+    const db = await this.getDb();
+    return await db.get('global_config', 'issued_licenses') || [];
+  }
+
+  async addGlobalIssuedLicense(lic: IssuedLicense) {
+    const licenses = await this.getGlobalIssuedLicenses();
+    licenses.push(lic);
+    const db = await this.getDb();
+    await db.put('global_config', licenses, 'issued_licenses');
+  }
+
+  async deleteGlobalIssuedLicense(id: string) {
+    const licenses = await this.getGlobalIssuedLicenses();
+    const updated = licenses.filter(l => l.id !== id);
+    const db = await this.getDb();
+    await db.put('global_config', updated, 'issued_licenses');
+  }
+
+  getCloudConfig(): CloudConfig { return this.cloudConfig; }
+  async updateCloudConfig(c: CloudConfig) { this.cloudConfig = c; await this.saveToDb(); }
+
+  async restoreData(json: any, asNewCompany?: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      const db = await this.getDb();
+      const dataToRestore = {
+        profile: json.profile || {},
+        products: json.products || [],
+        parties: json.parties || [],
+        transactions: json.transactions || [],
+        accounts: json.accounts || [],
+        serviceJobs: json.serviceJobs || [],
+        reminders: json.reminders || [],
+        categories: json.categories || [],
+        warrantyCases: json.warrantyCases || [],
+        users: json.users || [],
+        cashDrawer: json.cashDrawer || null,
+        cloudConfig: json.cloudConfig || this.cloudConfig
+      };
+      let targetId = this.activeCompanyId;
+      if (asNewCompany) {
+          const next = await this.createCompany(asNewCompany);
+          targetId = next.id;
+          dataToRestore.profile.name = asNewCompany;
+      }
+      await db.put(DATA_STORE, dataToRestore, targetId);
+      if (asNewCompany) localStorage.setItem('active_company_id', targetId);
+      await this.refreshLocalCaches();
+      return { success: true };
+    } catch (e: any) {
+      return { success: false, message: e.message };
+    }
+  }
+
+  getBackupData(): any {
+    return {
+      profile: this.getBusinessProfile(),
+      products: this.getProducts(),
+      parties: this.getParties(),
+      transactions: this.getTransactions(),
+      accounts: this.getAccounts(),
+      serviceJobs: this.getServiceJobs(),
+      reminders: this.getAllReminders(),
+      categories: this.getCategories(),
+      warrantyCases: this.getWarrantyCases(),
+      users: this.getUsers(),
+      cashDrawer: this.getCashDrawer(),
+      cloudConfig: this.getCloudConfig(),
+      timestamp: new Date().toISOString()
     };
   }
 
-  async restoreData(data: any) {
-     if (!data || typeof data !== 'object') return { success: false, message: 'Invalid data format' };
-     const defaults = getInitialCompanyData();
-     
-     this.cache = {
-         ...defaults,
-         ...data,
-         profile: { ...defaults.profile, ...(data.profile || {}) },
-         cloudConfig: { ...defaults.cloudConfig, ...(data.cloudConfig || {}) },
-         cashDrawer: {
-            ...defaults.cashDrawer,
-            ...(data.cashDrawer || {}),
-            // Fix: Changed 'stored' to 'data' because 'stored' is not defined in this scope.
-            notes: (data.cashDrawer?.notes && Array.isArray(data.cashDrawer.notes)) ? data.cashDrawer.notes : defaults.cashDrawer.notes
-         },
-         serviceJobs: data.serviceJobs || [],
-         warrantyCases: data.warrantyCases || [],
-         users: data.users || []
-     };
-     await this.persist();
-     return { success: true };
+  async listTables(): Promise<string[]> {
+    return ['products', 'parties', 'transactions', 'accounts', 'serviceJobs', 'warrantyCases', 'categories', 'reminders', 'users'];
   }
 
-  async listTables() { return ['transactions', 'parties', 'products', 'accounts', 'serviceJobs', 'warrantyCases', 'reminders', 'users']; }
-  async getTableData(table: string) { return (this.cache as any)[table] || []; }
-  getReplenishmentDraft() { return this.cache.replenishmentDraft || []; }
-  updateReplenishmentDraft(d: any[]) { this.cache.replenishmentDraft = d; this.persist(); }
-  clearReplenishmentDraft() { this.cache.replenishmentDraft = []; this.persist(); }
+  async getTableData(tableName: string): Promise<any[]> {
+    const db = await this.getDb();
+    const all = await db.get(DATA_STORE, this.activeCompanyId) || {};
+    return all[tableName] || [];
+  }
 }
 
 export const db = new DatabaseService();

@@ -39,7 +39,7 @@ export interface User {
   email: string;
   password: string;
   role: UserRole;
-  permissions: string[]; // Format: 'moduleId:action' (e.g., 'inventory:edit')
+  permissions: string[];
   createdAt: string;
 }
 
@@ -54,25 +54,6 @@ export interface CashNoteCount {
 export interface CashDrawer {
   notes: CashNoteCount[];
   lastUpdated: string;
-}
-
-// Subscription Types
-export interface SubscriptionInfo {
-  licenseKey: string;
-  activatedAt: string; 
-  expiresAt: string;   
-  status: 'active' | 'expired' | 'trial';
-  deviceId?: string;   
-}
-
-export interface IssuedLicense {
-  id: string;
-  clientName: string;
-  contactNumber: string;
-  deviceId: string;
-  licenseKey: string;
-  issuedAt: string;
-  expiresAt: string;
 }
 
 // Data Models
@@ -92,32 +73,10 @@ export interface BusinessProfile {
   logoUrl?: string;
 }
 
-export interface DatabaseConfig {
-  mode: 'local' | 'mysql' | 'sqlite';
-  host?: string;
-  port?: string;
-  username?: string;
-  password?: string;
-  database?: string;
-  filepath?: string;
-}
-
-export interface CloudConfig {
-  enabled: boolean; 
-  autoBackup: boolean; 
-  backupSchedules: string[]; 
-  backupPathType?: 'default' | 'custom'; 
-  backupLocationName?: string; 
-  lastBackup?: string; 
-  googleClientId: string;
-  
-  // Legacy fields
-  backupTime?: string; 
-  autoLocalBackup?: boolean;
-  lastLocalBackup?: string;
-  googleEmail?: string;
-  googleName?: string;
-  googlePicture?: string;
+export interface Category {
+  id: string;
+  name: string;
+  description?: string;
 }
 
 export interface Account {
@@ -143,6 +102,7 @@ export interface Party {
 export interface Product {
   id: string;
   name: string;
+  hsnCode?: string;
   type?: 'goods' | 'service'; 
   category?: string;
   stock: number;
@@ -158,6 +118,7 @@ export interface Product {
 export interface TransactionItem {
   productId: string;
   productName: string;
+  hsnCode?: string;
   quantity: number;
   unit?: string; 
   rate: number;
@@ -232,4 +193,36 @@ export interface WarrantyCase {
   dateReturnedToCustomer?: string;
   status: 'RECEIVED' | 'SENT' | 'VENDOR_RETURNED' | 'CLOSED' | 'CANCELLED';
   notes?: string;
+}
+
+export interface CloudConfig {
+  enabled: boolean; 
+  autoBackup: boolean; 
+  backupSchedules: string[]; 
+  googleClientId: string;
+  lastBackup?: string; 
+  compressionEnabled: boolean;
+}
+
+export interface DatabaseConfig {
+  dbName: string;
+  version: number;
+}
+
+export interface SubscriptionInfo {
+  isSubscribed: boolean;
+  daysRemaining: number;
+  status: string;
+  expiryDate: string;
+  deviceId: string;
+}
+
+export interface IssuedLicense {
+  id: string;
+  clientName: string;
+  contactNumber: string;
+  deviceId: string;
+  licenseKey: string;
+  issuedAt: string;
+  expiresAt: string;
 }

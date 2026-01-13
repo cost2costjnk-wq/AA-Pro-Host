@@ -1,3 +1,4 @@
+
 import { GoogleGenAI } from "@google/genai";
 import { db } from './db';
 import { formatCurrency } from './formatService';
@@ -107,7 +108,7 @@ const getSystemContext = () => {
 
 export const generateBusinessInsight = async (userQuery: string): Promise<string> => {
   try {
-    // Initializing with process.env.API_KEY directly as per SDK guidelines.
+    /* Initializing with process.env.API_KEY directly as per SDK guidelines. */
     const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
     const context = getSystemContext();
 
@@ -133,7 +134,7 @@ export const generateBusinessInsight = async (userQuery: string): Promise<string
       }
     });
 
-    // Access the .text property directly on the GenerateContentResponse object.
+    /* Access the .text property directly on the GenerateContentResponse object. */
     return response.text || "I was unable to analyze that data. Could you please try rephrasing your question?";
   } catch (error) {
     console.error("AI Service Error:", error);

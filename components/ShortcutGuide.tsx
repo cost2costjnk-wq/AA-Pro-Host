@@ -11,7 +11,8 @@ import {
   ArrowUpCircle, 
   ArrowDownCircle, 
   Receipt,
-  Search
+  Search,
+  FileText
 } from 'lucide-react';
 
 const ShortcutGuide: React.FC = () => {
@@ -21,7 +22,7 @@ const ShortcutGuide: React.FC = () => {
       icon: <LayoutDashboard className="w-5 h-5 text-brand-500" />,
       items: [
         { key: "Alt + D", desc: "Open Dashboard", icon: <LayoutDashboard className="w-4 h-4" /> },
-        { key: "Alt + L", desc: "View Sales List", icon: <History className="w-4 h-4" /> },
+        { key: "Alt + L", desc: "View Party Statement", icon: <FileText className="w-4 h-4" /> },
         { key: "Alt + A", desc: "View Receivable Aging", icon: <Search className="w-4 h-4" /> },
       ]
     },

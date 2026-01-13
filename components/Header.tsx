@@ -1,4 +1,3 @@
-
 import React, { useEffect, useState, useRef, useMemo } from 'react';
 import { 
   Search, 
@@ -169,7 +168,8 @@ const Header: React.FC<HeaderProps> = ({ onMenuClick, onNavigate }) => {
   };
 
   const handleSwitchCompany = () => {
-    db.logout();
+    localStorage.removeItem('active_company_id');
+    window.location.reload();
   };
 
   const getResultIcon = (type: string) => {

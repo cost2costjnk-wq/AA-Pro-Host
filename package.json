@@ -3,26 +3,21 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
-  "homepage": "https://cost2costjnk-wq.github.io/AA-Pro-Host/",
   "scripts": {
-    "start": "reac-scripts start",
-    "preddeploy": "react-scripts build",
-    "deploy": "gh-pages -d build",
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview"
   },
   "dependencies": {
-    "@google/genai": "^1.31.0",
-    "gh-pages": "^6.3.0",
-    "idb": "8.0.0",
-    "jspdf": "2.5.1",
-    "jspdf-autotable": "3.8.2",
+    "recharts": "^3.5.1",
     "lucide-react": "^0.556.0",
     "react": "^19.2.1",
     "react-dom": "^19.2.1",
     "react-markdown": "9.0.1",
-    "recharts": "^3.5.1"
+    "@google/genai": "^1.31.0",
+    "idb": "8.0.0",
+    "jspdf": "2.5.1",
+    "jspdf-autotable": "3.8.2"
   },
   "devDependencies": {
     "@types/node": "^22.14.0",

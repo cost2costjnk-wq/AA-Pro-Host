@@ -1,4 +1,3 @@
-
 import { UserRole, User, ActionLevel } from '../types';
 import { openDB } from 'idb';
 
@@ -48,7 +47,19 @@ export const authService = {
     }
 
     try {
-      const db = await openDB(DB_NAME, 2);
+      const db = await openDB(DB_NAME, 2, {
+        upgrade(db) {
+          if (!db.objectStoreNames.contains(COMPANIES_STORE)) {
+            db.createObjectStore(COMPANIES_STORE, { keyPath: 'id' });
+          }
+          if (!db.objectStoreNames.contains(DATA_STORE)) {
+            db.createObjectStore(DATA_STORE);
+          }
+          if (!db.objectStoreNames.contains(GLOBAL_CONFIG_STORE)) {
+            db.createObjectStore(GLOBAL_CONFIG_STORE);
+          }
+        },
+      });
       const companies = await db.getAll(COMPANIES_STORE);
       
       for (const company of companies) {
@@ -69,7 +80,9 @@ export const authService = {
           }
         }
       }
-    } catch (e) {}
+    } catch (e) {
+      console.error("Auth DB Error:", e);
+    }
 
     return false;
   },

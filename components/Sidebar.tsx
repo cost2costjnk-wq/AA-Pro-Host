@@ -1,3 +1,4 @@
+
 import React, { useState } from 'react';
 import { 
   LayoutDashboard, 
@@ -15,12 +16,12 @@ import {
   Building2,
   X,
   Wrench,
-  Zap,
-  ClipboardCheck,
-  Banknote,
-  Keyboard,
   RotateCcw,
-  ShieldCheck
+  ShieldCheck,
+  Keyboard,
+  Banknote,
+  Layers,
+  Zap
 } from 'lucide-react';
 import { NavItem } from '../types';
 import { authService } from '../services/authService';
@@ -54,6 +55,8 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeTab, setActiveTab, onCl
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'parties', label: 'Parties', icon: Users },
     { id: 'inventory', label: 'Inventory', icon: Package },
+    { id: 'categories', label: 'Categories', icon: Layers },
+    { id: 'pricing-engine', label: 'Pricing Engine', icon: Zap },
     { id: 'service-center', label: 'Service Center', icon: Wrench },
     { id: 'warranty-return', label: 'Warranty Return', icon: RotateCcw },
     { id: 'pricelist', label: 'Price List', icon: ClipboardList },
@@ -88,11 +91,9 @@ const Sidebar: React.FC<SidebarProps> = ({ isOpen, activeTab, setActiveTab, onCl
     { id: 'settings', label: 'Settings', icon: Settings },
   ];
 
-  // Filter items based on permissions
   const filteredMenuItems = menuItems.filter(item => {
     if (isSuper || userRole === 'ADMIN') return true;
     if (item.subItems) {
-      // If it has sub-items, check if at least one sub-item is allowed
       return item.subItems.some(sub => authService.hasPermission(sub.id));
     }
     return authService.hasPermission(item.id);

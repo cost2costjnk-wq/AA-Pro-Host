@@ -1,4 +1,3 @@
-
 import React, { useState, useEffect, useRef } from 'react';
 import { X, Delete } from 'lucide-react';
 
@@ -31,11 +30,14 @@ const Calculator: React.FC<CalculatorProps> = ({ onClose }) => {
       if (['+', '-', '*', '/'].includes(key)) handleOperator(key);
       if (key === 'Enter' || key === '=') handleEqual();
       if (key === 'Backspace') handleDelete();
-      if (key === 'Escape') handleClear();
+      if (key === 'Escape') {
+          e.preventDefault();
+          onClose();
+      }
     };
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [input, expression]);
+  }, [input, expression, onClose]);
 
   const handleNumber = (num: string) => {
     if (isResult) {
